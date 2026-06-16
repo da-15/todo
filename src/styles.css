@@ -293,6 +293,9 @@ body {
 .task-due.overdue {
   color: var(--danger);
 }
+.task-due.future {
+  color: var(--text);
+}
 .btn-delete {
   flex-shrink: 0;
   display: flex;

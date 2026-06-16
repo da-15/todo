@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import type { TodoTask } from "../types";
+import { todayLocal } from "../dateUtils";
 
 interface Props {
   task: TodoTask;
@@ -22,10 +23,17 @@ function formatDue(due: string | null): string {
 }
 
 export function TaskListItem({ task, onToggle, onEdit, onDelete }: Props) {
-  const overdue =
-    !task.isCompleted &&
-    task.dueDate !== null &&
-    task.dueDate < new Date().toISOString().slice(0, 10);
+  // 予定日の色分け: 昨日以前→赤(overdue) / 当日→青(today) / 未来→黒(future)。
+  // 完了済みは色分けしない（既定の青のまま）。
+  const today = todayLocal();
+  const dueState =
+    task.isCompleted || task.dueDate === null
+      ? ""
+      : task.dueDate < today
+        ? "overdue"
+        : task.dueDate === today
+          ? "today"
+          : "future";
 
   // open: 削除ボタンを露出した状態か。dragX: ドラッグ中の一時的な移動量。
   const [open, setOpen] = useState(false);
@@ -129,7 +137,7 @@ export function TaskListItem({ task, onToggle, onEdit, onDelete }: Props) {
           <div className="task-name">{task.name}</div>
           {task.detail && <div className="task-detail">{task.detail}</div>}
           {task.dueDate && (
-            <div className={`task-due ${overdue ? "overdue" : ""}`}>
+            <div className={`task-due ${dueState}`}>
               <svg
                 className="task-due-icon"
                 viewBox="0 0 24 24"

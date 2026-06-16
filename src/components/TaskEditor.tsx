@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { TodoTask } from "../types";
 import type { NewTaskInput } from "../storage/taskStore";
+import { todayLocal } from "../dateUtils";
 
 interface Props {
   initial?: TodoTask | null;
@@ -8,22 +9,18 @@ interface Props {
   onCancel: () => void;
 }
 
-function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 export function TaskEditor({ initial, onSave, onCancel }: Props) {
   const [name, setName] = useState("");
   const [detail, setDetail] = useState("");
   const [hasDue, setHasDue] = useState(false);
-  const [dueDate, setDueDate] = useState<string>(todayStr());
+  const [dueDate, setDueDate] = useState<string>(todayLocal());
 
   useEffect(() => {
     if (initial) {
       setName(initial.name);
       setDetail(initial.detail);
       setHasDue(initial.dueDate !== null);
-      setDueDate(initial.dueDate ?? todayStr());
+      setDueDate(initial.dueDate ?? todayLocal());
     }
   }, [initial]);
 
