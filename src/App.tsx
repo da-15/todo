@@ -198,7 +198,15 @@ export function App() {
           }}
         />
       )}
-      {settingsOpen && <SettingsView onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && (
+        <SettingsView
+          onClose={() => setSettingsOpen(false)}
+          onDataChanged={() => {
+            refresh();
+            setLastSync(getSyncMeta().lastSyncedAt);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -117,3 +117,8 @@ export function deleteTask(id: string): void {
 export function countUncompleted(): number {
   return readAll().filter((t) => !t.isDeleted && !t.isCompleted).length;
 }
+
+/** ローカルのタスクを全消去する（Google 側には触れない）。 */
+export function clearAllTasks(): void {
+  writeAll([]);
+}

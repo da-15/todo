@@ -3,6 +3,15 @@ import { getAccessToken } from "./auth";
 
 const BASE = "https://tasks.googleapis.com/tasks/v1";
 
+export class TasksApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "TasksApiError";
+    this.status = status;
+  }
+}
+
 export interface GoogleTask {
   id: string;
   title?: string;
@@ -40,7 +49,7 @@ async function api<T>(
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Google Tasks API ${res.status}: ${text}`);
+    throw new TasksApiError(res.status, `Google Tasks API ${res.status}: ${text}`);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;

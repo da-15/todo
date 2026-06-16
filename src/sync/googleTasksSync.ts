@@ -11,6 +11,7 @@ import {
   insertTask,
   listTasks,
   patchTask,
+  TasksApiError,
   type GoogleTask,
 } from "../google/tasksApi";
 import type { TodoTask } from "../types";
@@ -76,15 +77,31 @@ export async function syncWithGoogle(): Promise<SyncResult> {
   let tasks = getAllTasksRaw();
   const pushedGoogleIds = new Set<string>();
 
+  // Google 側に既に存在しない（404/410）= 削除済みとみなして成功扱いにする。
+  const isGone = (e: unknown): boolean =>
+    e instanceof TasksApiError && (e.status === 404 || e.status === 410);
+
+  // 真に失敗してリトライが必要なローカル ID。tombstone の保持判定に使う。
+  const failedIds = new Set<string>();
+
   // ===== 1. PUSH: ローカル変更を Google へ =====
   for (const task of tasks) {
     try {
       // 削除 tombstone → Google を delete
       if (task.isDeleted) {
         if (task.googleTaskId) {
-          await apiDeleteTask(task.googleTaskListId ?? listId, task.googleTaskId);
-          result.pushedDeleted++;
-          result.log.push(`delete → Google: ${task.name}`);
+          try {
+            await apiDeleteTask(task.googleTaskListId ?? listId, task.googleTaskId);
+            result.pushedDeleted++;
+            result.log.push(`delete → Google: ${task.name}`);
+          } catch (e) {
+            if (isGone(e)) {
+              // 既に Google 側に無い → 削除完了とみなす
+              result.log.push(`delete → Google(既に削除済): ${task.name}`);
+            } else {
+              throw e;
+            }
+          }
         }
         // tombstone は後でローカルからも除去（下のフィルタで）
         continue;
@@ -104,29 +121,45 @@ export async function syncWithGoogle(): Promise<SyncResult> {
         result.log.push(`insert → Google: ${task.name}`);
       } else if (changedSinceSync) {
         // 変更 patch
-        const updated = await patchTask(
-          task.googleTaskListId ?? listId,
-          task.googleTaskId,
-          localToGoogleBody(task),
-        );
-        task.syncedAt = updated.updated ?? new Date().toISOString();
-        pushedGoogleIds.add(task.googleTaskId);
-        result.pushedUpdated++;
-        result.log.push(`patch → Google: ${task.name}`);
+        try {
+          const updated = await patchTask(
+            task.googleTaskListId ?? listId,
+            task.googleTaskId,
+            localToGoogleBody(task),
+          );
+          task.syncedAt = updated.updated ?? new Date().toISOString();
+          pushedGoogleIds.add(task.googleTaskId);
+          result.pushedUpdated++;
+          result.log.push(`patch → Google: ${task.name}`);
+        } catch (e) {
+          if (isGone(e)) {
+            // 対象が Google 側に無い → 紐付けを解除して新規として登録し直す
+            task.googleTaskId = null;
+            task.googleTaskListId = null;
+            task.syncedAt = null;
+            const created = await insertTask(listId, localToGoogleBody(task));
+            task.googleTaskId = created.id;
+            task.googleTaskListId = listId;
+            task.syncedAt = created.updated ?? new Date().toISOString();
+            pushedGoogleIds.add(created.id);
+            result.pushedNew++;
+            result.log.push(`再登録 → Google: ${task.name}`);
+          } else {
+            throw e;
+          }
+        }
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      failedIds.add(task.id);
       result.errors.push(`push 失敗 (${task.name}): ${msg}`);
     }
   }
 
-  // tombstone のうち Google 側削除に成功（または googleTaskId なし）のものをローカルから除去。
-  // 削除に失敗したものは tombstone を残し、次回リトライする。
+  // tombstone をローカルから除去。削除に失敗したものだけ残し次回リトライする。
   tasks = tasks.filter((t) => {
     if (!t.isDeleted) return true;
-    if (!t.googleTaskId) return false; // 未同期削除は除去
-    const failed = result.errors.some((e) => e.includes(`(${t.name})`));
-    return failed; // 失敗時のみ残す
+    return failedIds.has(t.id); // 失敗時のみ残す
   });
 
   // ===== 2. PULL: Google から差分取得 =====
