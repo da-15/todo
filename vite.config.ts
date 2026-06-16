@@ -19,7 +19,7 @@ export default defineConfig({
         name: "ToDo",
         short_name: "ToDo",
         description: "個人用 ToDo 管理（Google Tasks 双方向同期）",
-        theme_color: "#2563eb",
+        theme_color: "#4b5563",
         background_color: "#ffffff",
         display: "standalone",
         orientation: "portrait",
