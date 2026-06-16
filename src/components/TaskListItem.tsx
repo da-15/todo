@@ -19,7 +19,6 @@ function formatDue(due: string | null): string {
 
 export function TaskListItem({ task, onToggle, onEdit, onDelete }: Props) {
   const overdue =
-    task.type === "scheduled" &&
     !task.isCompleted &&
     task.dueDate !== null &&
     task.dueDate < new Date().toISOString().slice(0, 10);
@@ -37,7 +36,7 @@ export function TaskListItem({ task, onToggle, onEdit, onDelete }: Props) {
       <div className="task-body" onClick={() => onEdit(task)}>
         <div className="task-name">{task.name}</div>
         {task.detail && <div className="task-detail">{task.detail}</div>}
-        {task.type === "scheduled" && task.dueDate && (
+        {task.dueDate && (
           <div className={`task-due ${overdue ? "overdue" : ""}`}>
             📅 {formatDue(task.dueDate)}
           </div>

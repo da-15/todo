@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
-import type { TaskType, TodoTask } from "../types";
+import type { TodoTask } from "../types";
 import type { NewTaskInput } from "../storage/taskStore";
 
 interface Props {
   initial?: TodoTask | null;
-  defaultType?: TaskType;
   onSave: (input: NewTaskInput) => void;
   onCancel: () => void;
 }
@@ -13,17 +12,17 @@ function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function TaskEditor({ initial, defaultType, onSave, onCancel }: Props) {
+export function TaskEditor({ initial, onSave, onCancel }: Props) {
   const [name, setName] = useState("");
   const [detail, setDetail] = useState("");
-  const [type, setType] = useState<TaskType>(defaultType ?? "simple");
+  const [hasDue, setHasDue] = useState(false);
   const [dueDate, setDueDate] = useState<string>(todayStr());
 
   useEffect(() => {
     if (initial) {
       setName(initial.name);
       setDetail(initial.detail);
-      setType(initial.type);
+      setHasDue(initial.dueDate !== null);
       setDueDate(initial.dueDate ?? todayStr());
     }
   }, [initial]);
@@ -35,8 +34,7 @@ export function TaskEditor({ initial, defaultType, onSave, onCancel }: Props) {
     onSave({
       name,
       detail,
-      type,
-      dueDate: type === "scheduled" ? dueDate : null,
+      dueDate: hasDue ? dueDate : null,
     });
   };
 
@@ -67,35 +65,23 @@ export function TaskEditor({ initial, defaultType, onSave, onCancel }: Props) {
         </label>
 
         <div className="field">
-          <span>種類</span>
-          <div className="segment">
-            <button
-              className={type === "simple" ? "active" : ""}
-              onClick={() => setType("simple")}
-              type="button"
-            >
-              シンプル
-            </button>
-            <button
-              className={type === "scheduled" ? "active" : ""}
-              onClick={() => setType("scheduled")}
-              type="button"
-            >
-              予定日
-            </button>
-          </div>
-        </div>
-
-        {type === "scheduled" && (
-          <label className="field">
-            <span>完了予定日</span>
+          <label className="toggle-row">
+            <input
+              type="checkbox"
+              checked={hasDue}
+              onChange={(e) => setHasDue(e.target.checked)}
+            />
+            <span>完了予定日を設定する</span>
+          </label>
+          {hasDue && (
             <input
               type="date"
+              className="due-input"
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
             />
-          </label>
-        )}
+          )}
+        </div>
 
         <div className="modal-actions">
           <button className="btn-ghost" onClick={onCancel} type="button">

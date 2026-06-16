@@ -37,8 +37,12 @@ export function saveAllRaw(tasks: TodoTask[]): void {
 export interface NewTaskInput {
   name: string;
   detail: string;
-  type: TaskType;
   dueDate: string | null;
+}
+
+// 予定日の有無で type を導出する（UI 上のカテゴリ分けは廃止）。
+function deriveType(dueDate: string | null): TaskType {
+  return dueDate ? "scheduled" : "simple";
 }
 
 export function createTask(input: NewTaskInput): TodoTask {
@@ -47,9 +51,9 @@ export function createTask(input: NewTaskInput): TodoTask {
     id: crypto.randomUUID(),
     name: input.name.trim(),
     detail: input.detail,
-    type: input.type,
+    type: deriveType(input.dueDate),
     isCompleted: false,
-    dueDate: input.type === "scheduled" ? input.dueDate : null,
+    dueDate: input.dueDate,
     googleTaskId: null,
     googleTaskListId: null,
     isDeleted: false,
@@ -75,8 +79,8 @@ export function updateTask(
     ...patch,
     updatedAt: new Date().toISOString(),
   };
-  // type と dueDate の整合性を保つ
-  if (updated.type === "simple") updated.dueDate = null;
+  // type は常に dueDate の有無から導出する
+  updated.type = deriveType(updated.dueDate);
   tasks[idx] = updated;
   writeAll(tasks);
   return updated;
@@ -109,9 +113,7 @@ export function deleteTask(id: string): void {
   writeAll(tasks);
 }
 
-/** 未完了 simple タスクの件数（バッジ用） */
-export function countUncompletedSimple(): number {
-  return readAll().filter(
-    (t) => !t.isDeleted && t.type === "simple" && !t.isCompleted,
-  ).length;
+/** 未完了タスクの件数（バッジ用） */
+export function countUncompleted(): number {
+  return readAll().filter((t) => !t.isDeleted && !t.isCompleted).length;
 }

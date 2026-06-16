@@ -1,9 +1,9 @@
-import { countUncompletedSimple } from "./storage/taskStore";
+import { countUncompleted } from "./storage/taskStore";
 import { getSettings, setSettings } from "./storage/settings";
 
-/** 未完了 simple 件数をアプリアイコンのバッジに反映する。 */
+/** 未完了タスク件数をアプリアイコンのバッジに反映する。 */
 export async function updateBadge(): Promise<void> {
-  const count = countUncompletedSimple();
+  const count = countUncompleted();
   try {
     if ("setAppBadge" in navigator) {
       if (count > 0) {

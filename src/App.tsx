@@ -11,7 +11,7 @@ import { syncWithGoogle } from "./sync/googleTasksSync";
 import { updateBadge, maybeRequestNotificationPermissionOnce } from "./badge";
 import { getSyncMeta } from "./storage/syncMeta";
 import { getSettings, setSettings } from "./storage/settings";
-import type { TaskType, TodoTask } from "./types";
+import type { TodoTask } from "./types";
 import type { NewTaskInput } from "./storage/taskStore";
 
 function isStandalone(): boolean {
@@ -35,7 +35,6 @@ function formatSyncTime(iso: string | null): string {
 
 export function App() {
   const { tasks, refresh, add, edit, remove, toggle } = useTasks();
-  const [tab, setTab] = useState<TaskType>("simple");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<TodoTask | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -61,22 +60,17 @@ export function App() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, []);
 
-  const filtered = useMemo(
+  // 並び順: 未完了優先 → 予定日ありを日付昇順 → 予定日なしを作成日降順。
+  const sorted = useMemo(
     () =>
-      tasks
-        .filter((t) => t.type === tab)
-        .sort((a, b) => {
-          if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1;
-          if (tab === "scheduled") {
-            return (a.dueDate ?? "").localeCompare(b.dueDate ?? "");
-          }
-          return b.createdAt.localeCompare(a.createdAt);
-        }),
-    [tasks, tab],
-  );
-
-  const uncompletedSimpleCount = useMemo(
-    () => tasks.filter((t) => t.type === "simple" && !t.isCompleted).length,
+      [...tasks].sort((a, b) => {
+        if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1;
+        const aHas = a.dueDate !== null;
+        const bHas = b.dueDate !== null;
+        if (aHas !== bHas) return aHas ? -1 : 1;
+        if (aHas && bHas) return a.dueDate!.localeCompare(b.dueDate!);
+        return b.createdAt.localeCompare(a.createdAt);
+      }),
     [tasks],
   );
 
@@ -120,7 +114,6 @@ export function App() {
       edit(editing.id, {
         name: input.name.trim(),
         detail: input.detail,
-        type: input.type,
         dueDate: input.dueDate,
       });
     } else {
@@ -148,24 +141,6 @@ export function App() {
         </button>
       </header>
 
-      <div className="segment tabs">
-        <button
-          className={tab === "simple" ? "active" : ""}
-          onClick={() => setTab("simple")}
-        >
-          シンプル
-          {uncompletedSimpleCount > 0 && (
-            <span className="badge">{uncompletedSimpleCount}</span>
-          )}
-        </button>
-        <button
-          className={tab === "scheduled" ? "active" : ""}
-          onClick={() => setTab("scheduled")}
-        >
-          予定日
-        </button>
-      </div>
-
       <div className="sync-bar">
         <span className="muted small">{formatSyncTime(lastSync)}</span>
         <button className="link-btn" onClick={handleSync} type="button">
@@ -176,13 +151,13 @@ export function App() {
 
       <PullToRefresh onRefresh={handleSync}>
         {showInstall && <InstallGuide onDismiss={dismissInstall} />}
-        {filtered.length === 0 ? (
+        {sorted.length === 0 ? (
           <p className="empty">
             タスクがありません。右下の＋から追加できます。
           </p>
         ) : (
           <ul className="task-list">
-            {filtered.map((task) => (
+            {sorted.map((task) => (
               <TaskListItem
                 key={task.id}
                 task={task}
@@ -202,7 +177,6 @@ export function App() {
       {editorOpen && (
         <TaskEditor
           initial={editing}
-          defaultType={tab}
           onSave={handleSave}
           onCancel={() => {
             setEditorOpen(false);
