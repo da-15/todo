@@ -3,7 +3,6 @@ import { useTasks } from "./hooks/useTasks";
 import { TaskListItem } from "./components/TaskListItem";
 import { TaskEditor } from "./components/TaskEditor";
 import { SettingsView } from "./components/SettingsView";
-import { PullToRefresh } from "./components/PullToRefresh";
 import { InstallGuide } from "./components/InstallGuide";
 import { isGoogleConfigured } from "./config";
 import { isLoggedIn, login, warmUp } from "./google/auth";
@@ -167,7 +166,7 @@ export function App() {
         {syncMsg && <div className="sync-toast">{syncMsg}</div>}
       </div>
 
-      <PullToRefresh onRefresh={handleSync}>
+      <div className="list-scroll">
         {showInstall && <InstallGuide onDismiss={dismissInstall} />}
         {sorted.length === 0 ? (
           <p className="empty">タスクはありません。</p>
@@ -184,7 +183,7 @@ export function App() {
             ))}
           </ul>
         )}
-      </PullToRefresh>
+      </div>
 
       <button className="fab" onClick={openNew} aria-label="新規タスク">
         ＋

@@ -177,21 +177,12 @@ body {
   font-size: 13px;
 }
 
-/* pull-to-refresh */
-.ptr-container {
+/* 一覧スクロール領域 */
+.list-scroll {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding: 8px 0 96px;
-}
-.ptr-indicator {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--muted);
-  font-size: 13px;
-  overflow: hidden;
-  transition: opacity 0.2s;
 }
 
 /* タスク一覧 */
