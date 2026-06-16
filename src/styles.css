@@ -247,13 +247,15 @@ body {
 }
 .check {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 26px;
   height: 26px;
   border-radius: 50%;
   border: 2px solid var(--border);
   background: #fff;
   color: #fff;
-  font-size: 15px;
   line-height: 1;
   cursor: pointer;
 }
@@ -278,19 +280,27 @@ body {
   word-break: break-word;
 }
 .task-due {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 13px;
   color: var(--blue);
   margin-top: 4px;
+}
+.task-due-icon {
+  flex-shrink: 0;
 }
 .task-due.overdue {
   color: var(--danger);
 }
 .btn-delete {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   background: transparent;
   color: var(--muted);
-  font-size: 16px;
   cursor: pointer;
   padding: 2px 4px;
 }
