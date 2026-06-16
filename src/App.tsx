@@ -6,7 +6,7 @@ import { SettingsView } from "./components/SettingsView";
 import { PullToRefresh } from "./components/PullToRefresh";
 import { InstallGuide } from "./components/InstallGuide";
 import { isGoogleConfigured } from "./config";
-import { isLoggedIn, login } from "./google/auth";
+import { isLoggedIn, login, warmUp } from "./google/auth";
 import { syncWithGoogle } from "./sync/googleTasksSync";
 import { updateBadge, maybeRequestNotificationPermissionOnce } from "./badge";
 import { getSyncMeta } from "./storage/syncMeta";
@@ -47,15 +47,11 @@ export function App() {
     () => !isStandalone() && !getSettings().installGuideDismissed,
   );
 
-  // 起動時にサイレントでトークン再取得を試みる。
-  // 過去に許可済み & Google セッションが有効なら UI なしでログイン状態を復元できる。
-  // 失敗（未許可・セッション切れ等）してもローカルのみで動作するため無視する。
+  // 起動時に GIS クライアントを事前初期化しておく。
+  // これで同期時に login() が requestAccessToken を同期的に呼べ、
+  // タップ操作内でポップアップを開ける（iOS のポップアップブロック対策）。
   useEffect(() => {
-    if (isGoogleConfigured() && !isLoggedIn()) {
-      login(false).catch(() => {
-        /* サイレント取得失敗。手動ログインにフォールバック */
-      });
-    }
+    void warmUp();
   }, []);
 
   // 起動時・フォアグラウンド復帰時にバッジ更新。初回に通知許可をリクエスト。
@@ -171,7 +167,7 @@ export function App() {
         {syncMsg && <div className="sync-toast">{syncMsg}</div>}
       </div>
 
-      <PullToRefresh onRefresh={handleSync} syncing={syncing}>
+      <PullToRefresh onRefresh={handleSync}>
         {showInstall && <InstallGuide onDismiss={dismissInstall} />}
         {sorted.length === 0 ? (
           <p className="empty">

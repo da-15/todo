@@ -59,21 +59,33 @@ function waitForGis(timeoutMs = 8000): Promise<void> {
   });
 }
 
-async function ensureClient(): Promise<TokenClient> {
-  if (!isGoogleConfigured()) {
-    throw new Error(
-      "Google クライアント ID が未設定です（VITE_GOOGLE_CLIENT_ID）",
-    );
-  }
-  await waitForGis();
-  if (!tokenClient) {
-    tokenClient = window.google!.accounts.oauth2.initTokenClient({
-      client_id: GOOGLE_CLIENT_ID,
-      scope: GOOGLE_TASKS_SCOPE,
-      callback: () => {}, // requestToken 内で都度差し替える
-    });
-  }
+// GIS が読み込み済みなら同期的にクライアントを生成して返す。未ロードなら null。
+function initClientSync(): TokenClient | null {
+  if (tokenClient) return tokenClient;
+  if (!isGoogleConfigured()) return null;
+  if (!window.google?.accounts?.oauth2) return null;
+  tokenClient = window.google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: GOOGLE_TASKS_SCOPE,
+    callback: () => {}, // requestAccessToken 内で都度差し替える
+  });
   return tokenClient;
+}
+
+/**
+ * 起動時に GIS クライアントを事前初期化しておく。
+ * これにより login() が requestAccessToken を「同期的に」呼べるようになり、
+ * タップ/クリックのユーザー操作スタック内でポップアップを開ける
+ * （iOS は await を挟むとポップアップをブロックするため）。
+ */
+export async function warmUp(): Promise<void> {
+  if (!isGoogleConfigured() || tokenClient) return;
+  try {
+    await waitForGis();
+    initClientSync();
+  } catch {
+    /* 起動時の事前初期化失敗は無視（login 時に再試行） */
+  }
 }
 
 export function isLoggedIn(): boolean {
@@ -83,11 +95,14 @@ export function isLoggedIn(): boolean {
 /**
  * アクセストークンを取得する。
  * @param interactive true ならユーザーに同意ダイアログを表示しうる。
+ *
+ * 重要: GIS 準備済みのときは requestAccessToken を同期的に呼ぶ。
+ * await を挟むと iOS ではポップアップがブロックされるため、warmUp() で
+ * 事前初期化しておくことが前提。
  */
 export function login(interactive = true): Promise<string> {
-  return new Promise(async (resolve, reject) => {
+  return new Promise((resolve, reject) => {
     // GIS のコールバックが呼ばれずに固まるのを防ぐため、必ずタイムアウトで解決する。
-    // サイレント取得は短め、対話は操作猶予のため長めにする。
     let settled = false;
     const timeoutMs = interactive ? 60_000 : 10_000;
     const timer = setTimeout(() => {
@@ -96,8 +111,7 @@ export function login(interactive = true): Promise<string> {
       reject(new Error("認証がタイムアウトしました"));
     }, timeoutMs);
 
-    try {
-      const client = await ensureClient();
+    const requestWith = (client: TokenClient) => {
       client.callback = (resp: TokenResponse) => {
         if (settled) return;
         settled = true;
@@ -112,11 +126,33 @@ export function login(interactive = true): Promise<string> {
         resolve(accessToken);
       };
       client.requestAccessToken({ prompt: interactive ? "" : "none" });
-    } catch (e) {
-      if (settled) return;
+    };
+
+    if (!isGoogleConfigured()) {
       settled = true;
       clearTimeout(timer);
-      reject(e);
+      reject(new Error("Google クライアント ID が未設定です（VITE_GOOGLE_CLIENT_ID）"));
+      return;
+    }
+
+    const client = initClientSync();
+    if (client) {
+      // 同期パス: ユーザー操作スタック内で実行 → ポップアップが開ける
+      requestWith(client);
+    } else {
+      // GIS 未ロード（通常は warmUp 済みなので稀）。ジェスチャーは失われうる。
+      waitForGis()
+        .then(() => {
+          const c = initClientSync();
+          if (!c) throw new Error("Google Identity Services の初期化に失敗しました");
+          requestWith(c);
+        })
+        .catch((e) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          reject(e);
+        });
     }
   });
 }

@@ -1,9 +1,8 @@
 import { useRef, useState, type ReactNode } from "react";
 
 interface Props {
-  onRefresh: () => Promise<void>;
+  onRefresh: () => void | Promise<void>;
   disabled?: boolean;
-  syncing?: boolean;
   children: ReactNode;
 }
 
@@ -13,26 +12,20 @@ const MAX_PULL = 110;
 /**
  * 一覧トップでの下スワイプ（pull-to-refresh）を検出する。
  * スクロール位置が最上部のときのみ反応する。
+ *
+ * 同期中の表示はしない（同期ボタン左のスピナーで分かるため）。リリース時に
+ * インジケーターを即座に畳むので、一覧（チケット）の位置がズレない。
+ * onRefresh はタップのジェスチャースタック内で同期的に呼ぶ（OAuth ポップアップ対策）。
  */
-export function PullToRefresh({
-  onRefresh,
-  disabled,
-  syncing,
-  children,
-}: Props) {
+export function PullToRefresh({ onRefresh, disabled, children }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const startY = useRef<number | null>(null);
   const [pull, setPull] = useState(0);
-  const [refreshing, setRefreshing] = useState(false);
 
   const onTouchStart = (e: React.TouchEvent) => {
-    if (disabled || refreshing) return;
+    if (disabled) return;
     const el = containerRef.current;
-    if (el && el.scrollTop <= 0) {
-      startY.current = e.touches[0].clientY;
-    } else {
-      startY.current = null;
-    }
+    startY.current = el && el.scrollTop <= 0 ? e.touches[0].clientY : null;
   };
 
   const onTouchMove = (e: React.TouchEvent) => {
@@ -44,20 +37,15 @@ export function PullToRefresh({
     }
   };
 
-  const onTouchEnd = async () => {
+  const onTouchEnd = () => {
     if (startY.current === null) return;
     startY.current = null;
-    if (pull >= THRESHOLD && !refreshing) {
-      setRefreshing(true);
-      setPull(THRESHOLD);
-      try {
-        await onRefresh();
-      } finally {
-        setRefreshing(false);
-        setPull(0);
-      }
-    } else {
-      setPull(0);
+    const trigger = pull >= THRESHOLD;
+    setPull(0); // 即座に戻す → 一覧の位置がズレない
+    if (trigger) {
+      // await しない: ユーザー操作スタック内で同期的に呼ぶことで
+      // iOS でも OAuth ポップアップが開ける。同期中表示はボタン側に任せる。
+      void onRefresh();
     }
   };
 
@@ -73,13 +61,7 @@ export function PullToRefresh({
         className="ptr-indicator"
         style={{ height: pull, opacity: pull > 10 ? 1 : 0 }}
       >
-        {refreshing || syncing ? (
-          <span className="spinner" aria-label="同期中" />
-        ) : pull >= THRESHOLD ? (
-          "離して同期"
-        ) : (
-          "引き下げて同期"
-        )}
+        {pull >= THRESHOLD ? "離して同期" : "引き下げて同期"}
       </div>
       <div>{children}</div>
     </div>
