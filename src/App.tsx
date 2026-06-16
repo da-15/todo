@@ -5,7 +5,7 @@ import { TaskEditor } from "./components/TaskEditor";
 import { SettingsView } from "./components/SettingsView";
 import { InstallGuide } from "./components/InstallGuide";
 import { isGoogleConfigured } from "./config";
-import { isLoggedIn, login, warmUp, onAuthChange } from "./google/auth";
+import { isLoggedIn, login, warmUp } from "./google/auth";
 import { syncWithGoogle } from "./sync/googleTasksSync";
 import { updateBadge, maybeRequestNotificationPermissionOnce } from "./badge";
 import { getSyncMeta } from "./storage/syncMeta";
@@ -45,10 +45,6 @@ export function App() {
   const [showInstall, setShowInstall] = useState(
     () => !isStandalone() && !getSettings().installGuideDismissed,
   );
-  const [loggedIn, setLoggedIn] = useState(isLoggedIn());
-
-  // ログイン状態に応じて「同期」ボタンの表示を切り替えるため購読する。
-  useEffect(() => onAuthChange(setLoggedIn), []);
 
   // 起動時に GIS クライアントを事前初期化しておく。
   // これで同期時に login() が requestAccessToken を同期的に呼べ、
@@ -158,21 +154,19 @@ export function App() {
         </button>
       </header>
 
-      {loggedIn && (
-        <div className="sync-bar">
-          <span className="muted small">{formatSyncTime(lastSync)}</span>
-          <button
-            className="link-btn"
-            onClick={handleSync}
-            disabled={syncing}
-            type="button"
-          >
-            {syncing && <span className="spinner" aria-hidden="true" />}
-            同期
-          </button>
-          {syncMsg && <div className="sync-toast">{syncMsg}</div>}
-        </div>
-      )}
+      <div className="sync-bar">
+        <span className="muted small">{formatSyncTime(lastSync)}</span>
+        <button
+          className="link-btn"
+          onClick={handleSync}
+          disabled={syncing}
+          type="button"
+        >
+          {syncing && <span className="spinner" aria-hidden="true" />}
+          同期
+        </button>
+        {syncMsg && <div className="sync-toast">{syncMsg}</div>}
+      </div>
 
       <div className="list-scroll">
         {showInstall && <InstallGuide onDismiss={dismissInstall} />}
