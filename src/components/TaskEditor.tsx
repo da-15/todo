@@ -41,25 +41,21 @@ export function TaskEditor({ initial, onSave, onCancel }: Props) {
   return (
     <div className="modal-backdrop" onClick={onCancel}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>{initial ? "タスクを編集" : "新しいタスク"}</h2>
-
         <label className="field">
-          <span>タスク名</span>
           <input
             type="text"
             value={name}
             autoFocus
-            placeholder="例: 牛乳を買う"
+            placeholder="タスク名（例: 牛乳を買う）"
             onChange={(e) => setName(e.target.value)}
           />
         </label>
 
         <label className="field">
-          <span>詳細</span>
           <textarea
             value={detail}
             rows={3}
-            placeholder="メモ（任意）"
+            placeholder="詳細（任意）"
             onChange={(e) => setDetail(e.target.value)}
           />
         </label>
