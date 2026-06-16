@@ -198,17 +198,39 @@ body {
   overflow: hidden;
 }
 .task-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  background: var(--card);
+  position: relative;
   border-top: 1px solid var(--border);
-  padding: 12px 14px;
+  overflow: hidden;
 }
 .task-item:first-child {
   border-top: none;
 }
-.task-item.done {
+/* 左スワイプで露出する削除ボタン（チケットの背後に固定） */
+.swipe-delete {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  border: none;
+  background: var(--danger);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  z-index: 0;
+}
+/* チケット本体。背面の削除ボタンを覆うよう不透明にし、左へスライドさせる */
+.task-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--card);
+  padding: 12px 14px;
+  touch-action: pan-y;
+}
+.task-item.done .task-row {
   background: #f1f3f5;
 }
 .task-item.done .task-name {
