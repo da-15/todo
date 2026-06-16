@@ -113,7 +113,7 @@ export function SettingsView({ onClose, onDataChanged }: Props) {
             </p>
           ) : loggedIn ? (
             <>
-              <p className="muted">連携済み。プルダウンで同期できます。</p>
+              <p className="muted">連携済み。</p>
               <button className="btn-ghost" onClick={logout} type="button">
                 ログアウト
               </button>
