@@ -1,0 +1,216 @@
+import { useEffect, useMemo, useState } from "react";
+import { useTasks } from "./hooks/useTasks";
+import { TaskListItem } from "./components/TaskListItem";
+import { TaskEditor } from "./components/TaskEditor";
+import { SettingsView } from "./components/SettingsView";
+import { PullToRefresh } from "./components/PullToRefresh";
+import { InstallGuide } from "./components/InstallGuide";
+import { isGoogleConfigured } from "./config";
+import { isLoggedIn, login, onAuthChange } from "./google/auth";
+import { syncWithGoogle } from "./sync/googleTasksSync";
+import { updateBadge, maybeRequestNotificationPermissionOnce } from "./badge";
+import { getSyncMeta } from "./storage/syncMeta";
+import { getSettings, setSettings } from "./storage/settings";
+import type { TaskType, TodoTask } from "./types";
+import type { NewTaskInput } from "./storage/taskStore";
+
+function isStandalone(): boolean {
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    // iOS Safari 独自プロパティ
+    (window.navigator as { standalone?: boolean }).standalone === true
+  );
+}
+
+function formatSyncTime(iso: string | null): string {
+  if (!iso) return "未同期";
+  const d = new Date(iso);
+  return `最終同期 ${d.toLocaleString("ja-JP", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
+}
+
+export function App() {
+  const { tasks, refresh, add, edit, remove, toggle } = useTasks();
+  const [tab, setTab] = useState<TaskType>("simple");
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editing, setEditing] = useState<TodoTask | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [loggedIn, setLoggedIn] = useState(isLoggedIn());
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [lastSync, setLastSync] = useState<string | null>(
+    () => getSyncMeta().lastSyncedAt,
+  );
+  const [showInstall, setShowInstall] = useState(
+    () => !isStandalone() && !getSettings().installGuideDismissed,
+  );
+
+  useEffect(() => onAuthChange(setLoggedIn), []);
+
+  // 起動時・フォアグラウンド復帰時にバッジ更新。初回に通知許可をリクエスト。
+  useEffect(() => {
+    void maybeRequestNotificationPermissionOnce();
+    void updateBadge();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void updateBadge();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
+
+  const filtered = useMemo(
+    () =>
+      tasks
+        .filter((t) => t.type === tab)
+        .sort((a, b) => {
+          if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1;
+          if (tab === "scheduled") {
+            return (a.dueDate ?? "").localeCompare(b.dueDate ?? "");
+          }
+          return b.createdAt.localeCompare(a.createdAt);
+        }),
+    [tasks, tab],
+  );
+
+  const uncompletedSimpleCount = useMemo(
+    () => tasks.filter((t) => t.type === "simple" && !t.isCompleted).length,
+    [tasks],
+  );
+
+  const handleSync = async () => {
+    if (!isGoogleConfigured()) {
+      setSyncMsg("Google 未設定のため同期できません");
+      setTimeout(() => setSyncMsg(null), 3000);
+      return;
+    }
+    try {
+      if (!isLoggedIn()) {
+        await login(true); // 未ログイン時はログインを促してから同期
+      }
+      const result = await syncWithGoogle();
+      refresh();
+      setLastSync(result.finishedAt);
+      const pushed = result.pushedNew + result.pushedUpdated + result.pushedDeleted;
+      const pulled = result.pulledNew + result.pulledUpdated + result.pulledDeleted;
+      setSyncMsg(
+        result.errors.length
+          ? `同期に一部失敗（${result.errors.length}件）`
+          : `同期完了 ↑${pushed} ↓${pulled}`,
+      );
+    } catch (e) {
+      setSyncMsg(`同期失敗: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setTimeout(() => setSyncMsg(null), 4000);
+    }
+  };
+
+  const openNew = () => {
+    setEditing(null);
+    setEditorOpen(true);
+  };
+  const openEdit = (task: TodoTask) => {
+    setEditing(task);
+    setEditorOpen(true);
+  };
+  const handleSave = (input: NewTaskInput) => {
+    if (editing) {
+      edit(editing.id, {
+        name: input.name.trim(),
+        detail: input.detail,
+        type: input.type,
+        dueDate: input.dueDate,
+      });
+    } else {
+      add(input);
+    }
+    setEditorOpen(false);
+    setEditing(null);
+  };
+
+  const dismissInstall = () => {
+    setSettings({ installGuideDismissed: true });
+    setShowInstall(false);
+  };
+
+  return (
+    <div className="app">
+      <header className="app-header">
+        <h1>ToDo</h1>
+        <button
+          className="icon-btn"
+          onClick={() => setSettingsOpen(true)}
+          aria-label="設定"
+        >
+          ⚙️
+        </button>
+      </header>
+
+      <div className="segment tabs">
+        <button
+          className={tab === "simple" ? "active" : ""}
+          onClick={() => setTab("simple")}
+        >
+          シンプル
+          {uncompletedSimpleCount > 0 && (
+            <span className="badge">{uncompletedSimpleCount}</span>
+          )}
+        </button>
+        <button
+          className={tab === "scheduled" ? "active" : ""}
+          onClick={() => setTab("scheduled")}
+        >
+          予定日
+        </button>
+      </div>
+
+      <div className="sync-bar">
+        <span className="muted small">{formatSyncTime(lastSync)}</span>
+        <button className="link-btn" onClick={handleSync} type="button">
+          {loggedIn ? "今すぐ同期" : "ログインして同期"}
+        </button>
+      </div>
+      {syncMsg && <div className="sync-msg">{syncMsg}</div>}
+
+      <PullToRefresh onRefresh={handleSync}>
+        {showInstall && <InstallGuide onDismiss={dismissInstall} />}
+        {filtered.length === 0 ? (
+          <p className="empty">
+            タスクがありません。右下の＋から追加できます。
+          </p>
+        ) : (
+          <ul className="task-list">
+            {filtered.map((task) => (
+              <TaskListItem
+                key={task.id}
+                task={task}
+                onToggle={toggle}
+                onEdit={openEdit}
+                onDelete={remove}
+              />
+            ))}
+          </ul>
+        )}
+      </PullToRefresh>
+
+      <button className="fab" onClick={openNew} aria-label="新規タスク">
+        ＋
+      </button>
+
+      {editorOpen && (
+        <TaskEditor
+          initial={editing}
+          defaultType={tab}
+          onSave={handleSave}
+          onCancel={() => {
+            setEditorOpen(false);
+            setEditing(null);
+          }}
+        />
+      )}
+      {settingsOpen && <SettingsView onClose={() => setSettingsOpen(false)} />}
+    </div>
+  );
+}
