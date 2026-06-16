@@ -12,4 +12,5 @@ export const STORAGE_KEYS = {
   tasks: "todo-tasks",
   syncMeta: "todo-sync-meta",
   settings: "todo-settings",
+  auth: "todo-auth",
 } as const;
