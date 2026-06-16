@@ -49,6 +49,17 @@ export function App() {
 
   useEffect(() => onAuthChange(setLoggedIn), []);
 
+  // 起動時にサイレントでトークン再取得を試みる。
+  // 過去に許可済み & Google セッションが有効なら UI なしでログイン状態を復元できる。
+  // 失敗（未許可・セッション切れ等）してもローカルのみで動作するため無視する。
+  useEffect(() => {
+    if (isGoogleConfigured() && !isLoggedIn()) {
+      login(false).catch(() => {
+        /* サイレント取得失敗。手動ログインにフォールバック */
+      });
+    }
+  }, []);
+
   // 起動時・フォアグラウンド復帰時にバッジ更新。初回に通知許可をリクエスト。
   useEffect(() => {
     void maybeRequestNotificationPermissionOnce();
