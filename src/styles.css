@@ -487,3 +487,6 @@ code {
 .install-guide li {
   margin: 4px 0;
 }
+.inline-icon {
+  vertical-align: -2px;
+}

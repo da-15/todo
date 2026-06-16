@@ -142,13 +142,13 @@ export function SettingsView({ onClose, onDataChanged }: Props) {
           {notifPerm === "unsupported" ? (
             <p className="muted">この環境では通知に未対応です。</p>
           ) : notifPerm === "granted" ? (
-            <p className="muted">許可済み。未完了のシンプルタスク数をバッジ表示します。</p>
+            <p className="muted">許可済み。未完了のタスク数をバッジ表示します。</p>
           ) : (
             <>
               <p className="muted">
                 バッジ表示には通知許可が必要です（iOS 16.4 以降）。
                 {notifPerm === "denied" &&
-                  " 現在は拒否されています。設定アプリから許可してください。"}
+                  " 現在は拒否されています。OSのアプリ設定から許可してください。"}
               </p>
               {notifPerm === "default" && (
                 <button className="btn-primary" onClick={handleNotif} type="button">
