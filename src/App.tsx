@@ -64,21 +64,21 @@ export function App() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, []);
 
-  // 並び順:
+  // 並び順（「上ほど優先・直近」という思想で統一。日付はすべて昇順）:
   //  1. 未完了を上、完了済みを下
-  //  2. 完了済みどうしは「完了した日（updatedAt）」の新しい順
-  //  3. 未完了どうしは 予定日ありを日付昇順 → 予定日なしを更新日の新しい順
+  //  2. 完了済みどうしは「完了した日（updatedAt）」の古い順（古いものが上）
+  //  3. 未完了どうしは 予定日ありを日付昇順 → 予定日なしを更新日の古い順
   const sorted = useMemo(
     () =>
       [...tasks].sort((a, b) => {
         if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1;
         if (a.isCompleted && b.isCompleted)
-          return b.updatedAt.localeCompare(a.updatedAt);
+          return a.updatedAt.localeCompare(b.updatedAt);
         const aHas = a.dueDate !== null;
         const bHas = b.dueDate !== null;
         if (aHas !== bHas) return aHas ? -1 : 1;
         if (aHas && bHas) return a.dueDate!.localeCompare(b.dueDate!);
-        return b.updatedAt.localeCompare(a.updatedAt);
+        return a.updatedAt.localeCompare(b.updatedAt);
       }),
     [tasks],
   );
