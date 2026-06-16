@@ -3,6 +3,7 @@
 import {
   getAllTasksRaw,
   saveAllRaw,
+  isPendingSync,
 } from "../storage/taskStore";
 import { getSyncMeta, setSyncMeta } from "../storage/syncMeta";
 import {
@@ -107,8 +108,7 @@ export async function syncWithGoogle(): Promise<SyncResult> {
         continue;
       }
 
-      const changedSinceSync =
-        !task.syncedAt || Date.parse(task.updatedAt) > Date.parse(task.syncedAt);
+      const changedSinceSync = isPendingSync(task);
 
       if (!task.googleTaskId) {
         // 新規 insert
@@ -226,8 +226,7 @@ export async function syncWithGoogle(): Promise<SyncResult> {
     }
 
     // 両方に存在 → last-write-wins
-    const localChangedSinceSync =
-      !local.syncedAt || Date.parse(local.updatedAt) > Date.parse(local.syncedAt);
+    const localChangedSinceSync = isPendingSync(local);
     if (localChangedSinceSync && !isNewerRemote(local, remote)) {
       // ローカルが新しい → 既に push 済み想定だが、念のため保持してログ
       result.log.push(`conflict: ローカル優先 (${local.name})`);

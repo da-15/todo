@@ -30,6 +30,15 @@ export function getAllTasksRaw(): TodoTask[] {
   return readAll();
 }
 
+/**
+ * Google にまだ反映されていないローカル変更があるか（＝未同期）。
+ * 一度も同期していない（syncedAt が null）か、最終同期後に更新された場合 true。
+ * UI のインジケータと同期処理のプッシュ判定で同じ基準を使う。
+ */
+export function isPendingSync(task: TodoTask): boolean {
+  return !task.syncedAt || Date.parse(task.updatedAt) > Date.parse(task.syncedAt);
+}
+
 export function saveAllRaw(tasks: TodoTask[]): void {
   writeAll(tasks);
 }

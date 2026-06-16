@@ -272,6 +272,15 @@ body {
   font-size: 16px;
   word-break: break-word;
 }
+.sync-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--blue);
+  vertical-align: middle;
+}
 .task-detail {
   font-size: 13px;
   color: var(--muted);
