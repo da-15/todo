@@ -10,6 +10,12 @@ interface TokenResponse {
   expires_in?: number;
   error?: string;
 }
+// ポップアップを閉じた／開けなかった場合などに発火する GIS のエラー。
+// type 例: "popup_closed" | "popup_failed_to_open"
+interface GisError {
+  type?: string;
+  message?: string;
+}
 interface TokenClient {
   requestAccessToken: (overrides?: { prompt?: string }) => void;
   callback: (resp: TokenResponse) => void;
@@ -23,6 +29,7 @@ declare global {
             client_id: string;
             scope: string;
             callback: (resp: TokenResponse) => void;
+            error_callback?: (err: GisError) => void;
           }) => TokenClient;
           revoke: (token: string, done?: () => void) => void;
         };
@@ -34,6 +41,10 @@ declare global {
 let tokenClient: TokenClient | null = null;
 let accessToken: string | null = null;
 let tokenExpiresAt = 0; // epoch ms
+
+// 進行中の login() のエラー処理。ポップアップを閉じたときに即座に解決するため、
+// クライアント生成時に登録した error_callback からここへ通知する。
+let activeErrorHandler: ((err: GisError) => void) | null = null;
 
 const listeners = new Set<(loggedIn: boolean) => void>();
 
@@ -68,6 +79,8 @@ function initClientSync(): TokenClient | null {
     client_id: GOOGLE_CLIENT_ID,
     scope: GOOGLE_TASKS_SCOPE,
     callback: () => {}, // requestAccessToken 内で都度差し替える
+    // ポップアップを閉じた／開けなかったときに発火。進行中の login() を即座に終わらせる。
+    error_callback: (err) => activeErrorHandler?.(err),
   });
   return tokenClient;
 }
@@ -103,27 +116,45 @@ export function isLoggedIn(): boolean {
 export function login(interactive = true): Promise<string> {
   return new Promise((resolve, reject) => {
     // GIS のコールバックが呼ばれずに固まるのを防ぐため、必ずタイムアウトで解決する。
+    // 通常はポップアップを閉じれば error_callback が即発火するので、これは
+    // 「認証画面を開いたまま放置」した場合の保険。長すぎると不快なので短めにする。
     let settled = false;
-    const timeoutMs = interactive ? 60_000 : 10_000;
-    const timer = setTimeout(() => {
+    const timeoutMs = interactive ? 25_000 : 10_000;
+    const finish = (fn: () => void) => {
       if (settled) return;
       settled = true;
-      reject(new Error("認証がタイムアウトしました"));
+      clearTimeout(timer);
+      activeErrorHandler = null;
+      fn();
+    };
+    const timer = setTimeout(() => {
+      finish(() => reject(new Error("認証がタイムアウトしました")));
     }, timeoutMs);
 
     const requestWith = (client: TokenClient) => {
       client.callback = (resp: TokenResponse) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        if (resp.error || !resp.access_token) {
-          reject(new Error(resp.error ?? "アクセストークンの取得に失敗しました"));
-          return;
-        }
-        accessToken = resp.access_token;
-        tokenExpiresAt = Date.now() + (resp.expires_in ?? 3600) * 1000 - 60_000;
-        notify();
-        resolve(accessToken);
+        finish(() => {
+          if (resp.error || !resp.access_token) {
+            reject(new Error(resp.error ?? "アクセストークンの取得に失敗しました"));
+            return;
+          }
+          accessToken = resp.access_token;
+          tokenExpiresAt = Date.now() + (resp.expires_in ?? 3600) * 1000 - 60_000;
+          notify();
+          resolve(accessToken);
+        });
+      };
+      // ポップアップを閉じた／キャンセルした場合はここで即座に終了する。
+      activeErrorHandler = (err: GisError) => {
+        finish(() =>
+          reject(
+            new Error(
+              err.type === "popup_closed"
+                ? "認証がキャンセルされました"
+                : "認証ウィンドウを開けませんでした",
+            ),
+          ),
+        );
       };
       client.requestAccessToken({ prompt: interactive ? "" : "none" });
     };
@@ -147,12 +178,7 @@ export function login(interactive = true): Promise<string> {
           if (!c) throw new Error("Google Identity Services の初期化に失敗しました");
           requestWith(c);
         })
-        .catch((e) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          reject(e);
-        });
+        .catch((e) => finish(() => reject(e)));
     }
   });
 }
