@@ -116,14 +116,21 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: none;
-  background: transparent;
-  color: var(--blue);
+  border: 1px solid var(--blue);
+  background: var(--blue);
+  color: #fff;
   font-size: 14px;
+  font-weight: 600;
+  padding: 6px 16px;
+  border-radius: 8px;
   cursor: pointer;
 }
+.link-btn:active {
+  background: var(--blue-dark);
+  border-color: var(--blue-dark);
+}
 .link-btn:disabled {
-  opacity: 0.7;
+  opacity: 0.6;
   cursor: default;
 }
 
