@@ -158,9 +158,9 @@ export function App() {
         </button>
       </header>
 
-      <div className="sync-bar">
-        <span className="muted small">{formatSyncTime(lastSync)}</span>
-        {loggedIn && (
+      {loggedIn && (
+        <div className="sync-bar">
+          <span className="muted small">{formatSyncTime(lastSync)}</span>
           <button
             className="link-btn"
             onClick={handleSync}
@@ -170,9 +170,9 @@ export function App() {
             {syncing && <span className="spinner" aria-hidden="true" />}
             同期
           </button>
-        )}
-        {syncMsg && <div className="sync-toast">{syncMsg}</div>}
-      </div>
+          {syncMsg && <div className="sync-toast">{syncMsg}</div>}
+        </div>
+      )}
 
       <div className="list-scroll">
         {showInstall && <InstallGuide onDismiss={dismissInstall} />}
