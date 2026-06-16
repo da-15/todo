@@ -163,11 +163,15 @@ export async function syncWithGoogle(): Promise<SyncResult> {
   });
 
   // ===== 2. PULL: Google から差分取得 =====
+  // lastSync が無い場合は全件取得（completed/deleted 込み）。これを prune の根拠に使う。
+  const isFullPull = !lastSync;
   let remoteTasks: GoogleTask[] = [];
+  let pullOk = false;
   try {
     remoteTasks = await listTasks(listId, {
       updatedMin: lastSync ?? undefined,
     });
+    pullOk = true;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     result.errors.push(`pull 失敗: ${msg}`);
@@ -244,6 +248,25 @@ export async function syncWithGoogle(): Promise<SyncResult> {
       result.pulledUpdated++;
       result.log.push(`update ← Google: ${local.name}`);
     }
+  }
+
+  // ===== 3. PRUNE: 全件取得が成功したときのみ、Google 側に存在しない
+  // 同期済みローカルタスクを掃除する（別リストへの移動・アプリ外削除の取り残し対策）。
+  // 差分取得時は実行しない（返ってこない=削除ではないため誤削除になる）。
+  if (isFullPull && pullOk) {
+    const remoteIds = new Set(remoteTasks.map((r) => r.id));
+    const before = tasks.length;
+    tasks = tasks.filter((t) => {
+      // 未同期（googleTaskId なし）・他リスト紐付け・今サイクル push 済みは残す。
+      if (!t.googleTaskId) return true;
+      if (t.googleTaskListId && t.googleTaskListId !== listId) return true;
+      if (pushedGoogleIds.has(t.googleTaskId)) return true;
+      // 同期対象リストに属するのに Google 側に無い → 取り残しとして除去。
+      const exists = remoteIds.has(t.googleTaskId);
+      if (!exists) result.log.push(`prune(Google に無し): ${t.name}`);
+      return exists;
+    });
+    result.pulledDeleted += before - tasks.length;
   }
 
   // ローカル lastSyncMs 参照は将来の最適化用（現状は updatedMin に委譲）
