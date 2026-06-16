@@ -42,6 +42,25 @@ let tokenClient: TokenClient | null = null;
 let accessToken: string | null = null;
 let tokenExpiresAt = 0; // epoch ms
 
+// 「過去に一度でも認可に成功したか」のフラグ（トークン本体ではないので永続化する）。
+// これが立っていれば 2 回目以降は対話ログインでも prompt:"none" でサイレント取得を試みる。
+const CONSENT_KEY = "todo.googleConsented";
+function hasConsented(): boolean {
+  try {
+    return localStorage.getItem(CONSENT_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+function setConsented(v: boolean): void {
+  try {
+    if (v) localStorage.setItem(CONSENT_KEY, "1");
+    else localStorage.removeItem(CONSENT_KEY);
+  } catch {
+    /* localStorage 不可（プライベートモード等）は無視 */
+  }
+}
+
 // 進行中の login() のエラー処理。ポップアップを閉じたときに即座に解決するため、
 // クライアント生成時に登録した error_callback からここへ通知する。
 let activeErrorHandler: ((err: GisError) => void) | null = null;
@@ -132,20 +151,29 @@ export function login(interactive = true): Promise<string> {
     }, timeoutMs);
 
     const requestWith = (client: TokenClient) => {
+      // 対話ログインでも、過去に認可済みなら同意／アカウント選択画面を出さず
+      // prompt:"none" でサイレント取得を試みる（＝2回目以降はサイレント）。
+      // 初回（未認可）のときだけ prompt:"" で同意フローを表示する。
+      const silent = !interactive || hasConsented();
       client.callback = (resp: TokenResponse) => {
         finish(() => {
           if (resp.error || !resp.access_token) {
+            // サイレント取得が失敗したら認可フラグを下ろし、次回は対話フローに戻す。
+            if (silent) setConsented(false);
             reject(new Error(resp.error ?? "アクセストークンの取得に失敗しました"));
             return;
           }
           accessToken = resp.access_token;
           tokenExpiresAt = Date.now() + (resp.expires_in ?? 3600) * 1000 - 60_000;
+          setConsented(true);
           notify();
           resolve(accessToken);
         });
       };
-      // ポップアップを閉じた／キャンセルした場合はここで即座に終了する。
+      // ポップアップを閉じた／キャンセルした場合や、サイレント取得が
+      // 失敗した場合（interaction_required 等）はここで即座に終了する。
       activeErrorHandler = (err: GisError) => {
+        if (silent) setConsented(false);
         finish(() =>
           reject(
             new Error(
@@ -156,7 +184,7 @@ export function login(interactive = true): Promise<string> {
           ),
         );
       };
-      client.requestAccessToken({ prompt: interactive ? "" : "none" });
+      client.requestAccessToken({ prompt: silent ? "none" : "" });
     };
 
     if (!isGoogleConfigured()) {
@@ -195,5 +223,6 @@ export function logout(): void {
   }
   accessToken = null;
   tokenExpiresAt = 0;
+  setConsented(false); // 認可を取り消したので次回は対話フローに戻す
   notify();
 }
