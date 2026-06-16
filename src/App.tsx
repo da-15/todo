@@ -151,7 +151,7 @@ export function App() {
           onClick={() => setSettingsOpen(true)}
           aria-label="設定"
         >
-          ⚙️
+          ⋮
         </button>
       </header>
 
@@ -160,8 +160,8 @@ export function App() {
         <button className="link-btn" onClick={handleSync} type="button">
           同期
         </button>
+        {syncMsg && <div className="sync-toast">{syncMsg}</div>}
       </div>
-      {syncMsg && <div className="sync-msg">{syncMsg}</div>}
 
       <PullToRefresh onRefresh={handleSync}>
         {showInstall && <InstallGuide onDismiss={dismissInstall} />}
