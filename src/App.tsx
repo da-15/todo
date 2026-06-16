@@ -38,6 +38,7 @@ export function App() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<TodoTask | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<string | null>(
     () => getSyncMeta().lastSyncedAt,
@@ -83,20 +84,20 @@ export function App() {
   );
 
   const handleSync = async () => {
+    if (syncing) return; // 多重起動を防ぐ
     if (!isGoogleConfigured()) {
       setSyncMsg("Google 未設定のため同期できません");
       setTimeout(() => setSyncMsg(null), 3000);
       return;
     }
+    setSyncing(true);
     try {
       if (!isLoggedIn()) {
-        // まずサイレント再取得を試し、失敗時のみ対話ログインに切り替える。
-        // これにより無駄なポップアップを減らす。
-        try {
-          await login(false);
-        } catch {
-          await login(true);
-        }
+        // 未ログイン/失効時は対話ログインを直接呼ぶ。
+        // サイレント(prompt:"none")を先に挟むと、その待ち時間でタップ/クリックの
+        // transient activation が失効し、続くポップアップがブロックされて固まる
+        // （特に pull-to-refresh）。同意済みなら login(true) は一瞬で自動完了する。
+        await login(true);
       }
       const result = await syncWithGoogle();
       refresh();
@@ -111,6 +112,7 @@ export function App() {
     } catch (e) {
       setSyncMsg(`同期失敗: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
+      setSyncing(false);
       setTimeout(() => setSyncMsg(null), 4000);
     }
   };
@@ -157,13 +159,19 @@ export function App() {
 
       <div className="sync-bar">
         <span className="muted small">{formatSyncTime(lastSync)}</span>
-        <button className="link-btn" onClick={handleSync} type="button">
+        <button
+          className="link-btn"
+          onClick={handleSync}
+          disabled={syncing}
+          type="button"
+        >
+          {syncing && <span className="spinner" aria-hidden="true" />}
           同期
         </button>
         {syncMsg && <div className="sync-toast">{syncMsg}</div>}
       </div>
 
-      <PullToRefresh onRefresh={handleSync}>
+      <PullToRefresh onRefresh={handleSync} syncing={syncing}>
         {showInstall && <InstallGuide onDismiss={dismissInstall} />}
         {sorted.length === 0 ? (
           <p className="empty">

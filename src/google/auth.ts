@@ -86,9 +86,22 @@ export function isLoggedIn(): boolean {
  */
 export function login(interactive = true): Promise<string> {
   return new Promise(async (resolve, reject) => {
+    // GIS のコールバックが呼ばれずに固まるのを防ぐため、必ずタイムアウトで解決する。
+    // サイレント取得は短め、対話は操作猶予のため長めにする。
+    let settled = false;
+    const timeoutMs = interactive ? 60_000 : 10_000;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error("認証がタイムアウトしました"));
+    }, timeoutMs);
+
     try {
       const client = await ensureClient();
       client.callback = (resp: TokenResponse) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         if (resp.error || !resp.access_token) {
           reject(new Error(resp.error ?? "アクセストークンの取得に失敗しました"));
           return;
@@ -100,6 +113,9 @@ export function login(interactive = true): Promise<string> {
       };
       client.requestAccessToken({ prompt: interactive ? "" : "none" });
     } catch (e) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       reject(e);
     }
   });

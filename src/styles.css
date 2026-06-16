@@ -113,11 +113,35 @@ body {
   padding: 8px 16px 0;
 }
 .link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border: none;
   background: transparent;
   color: var(--blue);
   font-size: 14px;
   cursor: pointer;
+}
+.link-btn:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+/* 同期中インジケーター（リンク内・pull 内で共通利用） */
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: middle;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 /* 同期結果はレイアウトに影響しないオーバーレイ（トースト）で表示する */
 .sync-toast {

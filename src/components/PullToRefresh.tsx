@@ -3,6 +3,7 @@ import { useRef, useState, type ReactNode } from "react";
 interface Props {
   onRefresh: () => Promise<void>;
   disabled?: boolean;
+  syncing?: boolean;
   children: ReactNode;
 }
 
@@ -13,7 +14,12 @@ const MAX_PULL = 110;
  * 一覧トップでの下スワイプ（pull-to-refresh）を検出する。
  * スクロール位置が最上部のときのみ反応する。
  */
-export function PullToRefresh({ onRefresh, disabled, children }: Props) {
+export function PullToRefresh({
+  onRefresh,
+  disabled,
+  syncing,
+  children,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const startY = useRef<number | null>(null);
   const [pull, setPull] = useState(0);
@@ -67,15 +73,15 @@ export function PullToRefresh({ onRefresh, disabled, children }: Props) {
         className="ptr-indicator"
         style={{ height: pull, opacity: pull > 10 ? 1 : 0 }}
       >
-        {refreshing
-          ? "同期中…"
-          : pull >= THRESHOLD
-            ? "離して同期"
-            : "引き下げて同期"}
+        {refreshing || syncing ? (
+          <span className="spinner" aria-label="同期中" />
+        ) : pull >= THRESHOLD ? (
+          "離して同期"
+        ) : (
+          "引き下げて同期"
+        )}
       </div>
-      <div style={{ transform: `translateY(${refreshing ? 0 : 0}px)` }}>
-        {children}
-      </div>
+      <div>{children}</div>
     </div>
   );
 }

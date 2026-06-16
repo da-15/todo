@@ -39,13 +39,9 @@ export function SettingsView({ onClose, onDataChanged }: Props) {
   };
 
   const ensureLogin = async () => {
-    if (!isLoggedIn()) {
-      try {
-        await login(false);
-      } catch {
-        await login(true);
-      }
-    }
+    // 直接対話ログインを呼ぶ（サイレント前段は activation 失効でポップアップが
+    // 固まる原因になるため。同意済みなら一瞬で自動完了する）。
+    if (!isLoggedIn()) await login(true);
   };
 
   // 同期状態リセット: lastSyncedAt を消して全件取り直す。紐付け・タスク本体は保持。
