@@ -137,8 +137,6 @@ export function App() {
     }
     setEditorOpen(false);
     setEditing(null);
-    // ログイン済みなら保存直後に自動同期（未ログイン時は認証画面を出したくないので何もしない）。
-    if (isLoggedIn()) void handleSync();
   };
 
   const dismissInstall = () => {
