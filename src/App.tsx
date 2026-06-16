@@ -170,9 +170,7 @@ export function App() {
       <PullToRefresh onRefresh={handleSync}>
         {showInstall && <InstallGuide onDismiss={dismissInstall} />}
         {sorted.length === 0 ? (
-          <p className="empty">
-            タスクがありません。右下の＋から追加できます。
-          </p>
+          <p className="empty">タスクはありません。</p>
         ) : (
           <ul className="task-list">
             {sorted.map((task) => (
