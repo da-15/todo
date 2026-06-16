@@ -6,7 +6,7 @@ import { SettingsView } from "./components/SettingsView";
 import { PullToRefresh } from "./components/PullToRefresh";
 import { InstallGuide } from "./components/InstallGuide";
 import { isGoogleConfigured } from "./config";
-import { isLoggedIn, login, onAuthChange } from "./google/auth";
+import { isLoggedIn, login } from "./google/auth";
 import { syncWithGoogle } from "./sync/googleTasksSync";
 import { updateBadge, maybeRequestNotificationPermissionOnce } from "./badge";
 import { getSyncMeta } from "./storage/syncMeta";
@@ -38,7 +38,6 @@ export function App() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<TodoTask | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [loggedIn, setLoggedIn] = useState(isLoggedIn());
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<string | null>(
     () => getSyncMeta().lastSyncedAt,
@@ -46,8 +45,6 @@ export function App() {
   const [showInstall, setShowInstall] = useState(
     () => !isStandalone() && !getSettings().installGuideDismissed,
   );
-
-  useEffect(() => onAuthChange(setLoggedIn), []);
 
   // 起動時にサイレントでトークン再取得を試みる。
   // 過去に許可済み & Google セッションが有効なら UI なしでログイン状態を復元できる。
@@ -93,7 +90,13 @@ export function App() {
     }
     try {
       if (!isLoggedIn()) {
-        await login(true); // 未ログイン時はログインを促してから同期
+        // まずサイレント再取得を試し、失敗時のみ対話ログインに切り替える。
+        // これにより無駄なポップアップを減らす。
+        try {
+          await login(false);
+        } catch {
+          await login(true);
+        }
       }
       const result = await syncWithGoogle();
       refresh();
@@ -155,7 +158,7 @@ export function App() {
       <div className="sync-bar">
         <span className="muted small">{formatSyncTime(lastSync)}</span>
         <button className="link-btn" onClick={handleSync} type="button">
-          {loggedIn ? "今すぐ同期" : "ログインして同期"}
+          同期
         </button>
       </div>
       {syncMsg && <div className="sync-msg">{syncMsg}</div>}

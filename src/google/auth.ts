@@ -1,16 +1,8 @@
 // Google Identity Services (GIS) の OAuth 2.0 トークンフロー（SPA 向け）。
-//
-// アクセストークンは localStorage に失効時刻つきで保存し、有効な間は再利用する。
-// iOS の standalone PWA ではサイレント取得（prompt:"none"）が
-// サードパーティ Cookie 制限で失敗しやすく、再起動のたびに再ログインを
-// 強いられるため。トークンは短命（約1時間）・スコープは tasks 限定・
-// リフレッシュトークンは持たないため、個人用途ではリスクは限定的。
-import {
-  GOOGLE_CLIENT_ID,
-  GOOGLE_TASKS_SCOPE,
-  isGoogleConfigured,
-  STORAGE_KEYS,
-} from "../config";
+// アクセストークンはメモリ保持のみとし、localStorage には保存しない（セキュリティ上の配慮）。
+// GIS はリフレッシュトークンを発行せず、トークンは約1時間で失効するため、
+// 再起動・失効後の同期時には再認証が必要になる。
+import { GOOGLE_CLIENT_ID, GOOGLE_TASKS_SCOPE, isGoogleConfigured } from "../config";
 
 // GIS の型は最小限だけ宣言する。
 interface TokenResponse {
@@ -42,37 +34,6 @@ declare global {
 let tokenClient: TokenClient | null = null;
 let accessToken: string | null = null;
 let tokenExpiresAt = 0; // epoch ms
-
-// 起動時に保存済みトークンを復元する。
-(function restore() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.auth);
-    if (!raw) return;
-    const { token, expiresAt } = JSON.parse(raw) as {
-      token: string;
-      expiresAt: number;
-    };
-    if (token && Date.now() < expiresAt) {
-      accessToken = token;
-      tokenExpiresAt = expiresAt;
-    } else {
-      localStorage.removeItem(STORAGE_KEYS.auth);
-    }
-  } catch {
-    /* 破損時は無視 */
-  }
-})();
-
-function persistToken(): void {
-  if (accessToken) {
-    localStorage.setItem(
-      STORAGE_KEYS.auth,
-      JSON.stringify({ token: accessToken, expiresAt: tokenExpiresAt }),
-    );
-  } else {
-    localStorage.removeItem(STORAGE_KEYS.auth);
-  }
-}
 
 const listeners = new Set<(loggedIn: boolean) => void>();
 
@@ -134,7 +95,6 @@ export function login(interactive = true): Promise<string> {
         }
         accessToken = resp.access_token;
         tokenExpiresAt = Date.now() + (resp.expires_in ?? 3600) * 1000 - 60_000;
-        persistToken();
         notify();
         resolve(accessToken);
       };
@@ -157,6 +117,5 @@ export function logout(): void {
   }
   accessToken = null;
   tokenExpiresAt = 0;
-  persistToken();
   notify();
 }
