@@ -30,8 +30,10 @@ export interface SyncResult {
 }
 
 // ---- 変換 ----
-function dueDateToRfc3339(dueDate: string | null): string | undefined {
-  if (!dueDate) return undefined;
+function dueDateToRfc3339(dueDate: string | null): string {
+  // 未指定でも空文字を返す。undefined にすると patch でフィールドが省略され、
+  // Google 側の既存の日時が消えない（日時クリアが反映されない）。
+  if (!dueDate) return "";
   // Google Tasks の due は日付のみ有効。UTC 0時で表現する。
   return `${dueDate}T00:00:00.000Z`;
 }
@@ -44,7 +46,9 @@ function rfc3339ToDueDate(due: string | undefined): string | null {
 function localToGoogleBody(task: TodoTask): Partial<GoogleTask> {
   return {
     title: task.name,
-    notes: task.detail || undefined,
+    // 空文字でも明示的に送る。undefined にすると patch でフィールドが省略され、
+    // Google 側の既存メモが消えない（空メモへの更新が反映されない）。
+    notes: task.detail ?? "",
     status: task.isCompleted ? "completed" : "needsAction",
     due: dueDateToRfc3339(task.dueDate),
   };
