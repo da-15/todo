@@ -142,7 +142,10 @@ export function SettingsView({ onClose, onDataChanged }: Props) {
           {notifPerm === "unsupported" ? (
             <p className="muted">この環境では通知に未対応です。</p>
           ) : notifPerm === "granted" ? (
-            <p className="muted">許可済み。未完了のタスク数をバッジ表示します。</p>
+            <p className="muted">
+              許可済み。未完了のタスク数をバッジ表示します。
+              バッジをやめるにはOSのアプリ設定から通知を無効にしてください。
+            </p>
           ) : (
             <>
               <p className="muted">
