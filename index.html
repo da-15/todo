@@ -13,8 +13,11 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="ToDo" />
     <title>ToDo</title>
-    <!-- Google Identity Services (OAuth トークンフロー用) -->
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <!--
+      Google Identity Services (OAuth トークンフロー用) は起動時には読み込まない。
+      コールドスタートの critical path から外すため、アプリ側の warmUp() が
+      アイドル時に動的注入する（src/google/auth.ts の injectGisScript）。
+    -->
   </head>
   <body>
     <div id="root"></div>
