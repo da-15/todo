@@ -232,10 +232,13 @@ body {
   position: relative;
   z-index: 1;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
   background: var(--card);
   padding: 12px 14px;
+  /* チケットの縦幅を揃える。内容が少なくても一定の高さを確保する。 */
+  min-height: 64px;
+  box-sizing: border-box;
   touch-action: pan-y;
 }
 .task-item.done .task-row {
@@ -282,11 +285,37 @@ body {
   vertical-align: middle;
 }
 .task-detail {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
   font-size: 13px;
   color: var(--muted);
   margin-top: 2px;
+}
+.task-detail[role="button"] {
+  cursor: pointer;
+}
+.task-detail-text {
+  flex: 1;
+  min-width: 0;
   white-space: pre-wrap;
   word-break: break-word;
+}
+/* 折りたたみ時は1行に省略表示（2行目以降は隠す） */
+.task-detail-text.clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.task-detail-chevron {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--muted);
+  transition: transform 0.2s ease;
+}
+.task-detail-chevron.open {
+  transform: rotate(180deg);
 }
 .task-due {
   display: inline-flex;

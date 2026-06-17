@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { TodoTask } from "../types";
 import { todayLocal } from "../dateUtils";
 import { isPendingSync } from "../storage/taskStore";
@@ -43,6 +43,23 @@ export function TaskListItem({ task, onToggle, onEdit, onDelete }: Props) {
   // open: 削除ボタンを露出した状態か。dragX: ドラッグ中の一時的な移動量。
   const [open, setOpen] = useState(false);
   const [dragX, setDragX] = useState<number | null>(null);
+
+  // 詳細メモのアコーディオン。expanded: 展開中か。overflowing: 折りたたみ時に
+  // 2行以上あふれているか（あふれているときだけシェブロンを出してタップ可能にする）。
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const detailRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    // 展開中はクランプが外れて測定できないので、折りたたみ時のみ判定する。
+    if (expanded) return;
+    const el = detailRef.current;
+    if (!el) {
+      setOverflowing(false);
+      return;
+    }
+    setOverflowing(el.scrollHeight > el.clientHeight + 1);
+  }, [task.detail, expanded]);
 
   const startX = useRef(0);
   const startY = useRef(0);
@@ -92,6 +109,17 @@ export function TaskListItem({ task, onToggle, onEdit, onDelete }: Props) {
       return;
     }
     onEdit(task);
+  };
+
+  const handleDetailClick = (e: React.MouseEvent) => {
+    // スワイプ直後やボタン露出中は本体クリックと同様に無視/閉じるだけ。
+    if (moved.current) return;
+    if (open) return;
+    // 2行以上あふれている詳細メモだけアコーディオンとして開閉。
+    // 1行以下のときは本体クリック（編集）に委ねる。
+    if (!overflowing) return;
+    e.stopPropagation();
+    setExpanded((v) => !v);
   };
 
   return (
@@ -145,7 +173,37 @@ export function TaskListItem({ task, onToggle, onEdit, onDelete }: Props) {
               <span className="sync-dot" aria-label="未同期" title="未同期" />
             )}
           </div>
-          {task.detail && <div className="task-detail">{task.detail}</div>}
+          {task.detail && (
+            <div
+              className="task-detail"
+              onClick={handleDetailClick}
+              role={overflowing ? "button" : undefined}
+              aria-expanded={overflowing ? expanded : undefined}
+            >
+              <div
+                ref={detailRef}
+                className={`task-detail-text ${expanded ? "" : "clamp"}`}
+              >
+                {task.detail}
+              </div>
+              {overflowing && (
+                <svg
+                  className={`task-detail-chevron ${expanded ? "open" : ""}`}
+                  viewBox="0 0 24 24"
+                  width="16"
+                  height="16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              )}
+            </div>
+          )}
           {task.dueDate && (
             <div className={`task-due ${dueState}`}>
               <svg
