@@ -46,18 +46,11 @@ export function App() {
     () => !isStandalone() && !getSettings().installGuideDismissed,
   );
 
-  // GIS クライアントの事前初期化（外部スクリプト取得を含む）はアイドル時に回す。
-  // 起動直後の critical path から外してコールドスタートを軽くする。事前初期化の
-  // 狙いは「同期時に login() が requestAccessToken を同期的に呼べ、タップ操作内で
-  // ポップアップを開ける」ことだが、同期ボタンを押すまでには十分間に合う。
+  // 起動時に GIS クライアントを事前初期化しておく。
+  // これで同期時に login() が requestAccessToken を同期的に呼べ、
+  // タップ操作内でポップアップを開ける（iOS のポップアップブロック対策）。
   useEffect(() => {
-    const ric = window.requestIdleCallback;
-    if (ric) {
-      const id = ric(() => void warmUp());
-      return () => window.cancelIdleCallback?.(id);
-    }
-    const id = window.setTimeout(() => void warmUp(), 1500);
-    return () => clearTimeout(id);
+    void warmUp();
   }, []);
 
   // 起動時・フォアグラウンド復帰時にバッジ更新。初回に通知許可をリクエスト。

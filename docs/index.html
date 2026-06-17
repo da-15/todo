@@ -13,12 +13,9 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="ToDo" />
     <title>ToDo</title>
-    <!--
-      Google Identity Services (OAuth トークンフロー用) は起動時には読み込まない。
-      コールドスタートの critical path から外すため、アプリ側の warmUp() が
-      アイドル時に動的注入する（src/google/auth.ts の injectGisScript）。
-    -->
-    <script type="module" crossorigin src="/todo/assets/index-Dexh0ps7.js"></script>
+    <!-- Google Identity Services (OAuth トークンフロー用) -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script type="module" crossorigin src="/todo/assets/index-BEtyD-CY.js"></script>
     <link rel="stylesheet" crossorigin href="/todo/assets/index-Q2NxqZWN.css">
   <link rel="manifest" href="/todo/manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/todo/registerSW.js"></script></head>
   <body>

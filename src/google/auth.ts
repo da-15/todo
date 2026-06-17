@@ -76,20 +76,6 @@ function notify() {
   listeners.forEach((cb) => cb(v));
 }
 
-// GIS の外部スクリプトを動的に注入する。index.html では読み込まず、
-// 初回の warmUp()／login() 時にここで初めて取得することで、起動時の
-// 外部ネットワーク負荷をコールドスタートの critical path から外す。
-let gisScriptRequested = false;
-function injectGisScript(): void {
-  if (gisScriptRequested || window.google?.accounts?.oauth2) return;
-  gisScriptRequested = true;
-  const s = document.createElement("script");
-  s.src = "https://accounts.google.com/gsi/client";
-  s.async = true;
-  s.defer = true;
-  document.head.appendChild(s);
-}
-
 function waitForGis(timeoutMs = 8000): Promise<void> {
   return new Promise((resolve, reject) => {
     const start = Date.now();
@@ -126,7 +112,6 @@ function initClientSync(): TokenClient | null {
  */
 export async function warmUp(): Promise<void> {
   if (!isGoogleConfigured() || tokenClient) return;
-  injectGisScript();
   try {
     await waitForGis();
     initClientSync();
@@ -214,9 +199,7 @@ export function login(interactive = true): Promise<string> {
       // 同期パス: ユーザー操作スタック内で実行 → ポップアップが開ける
       requestWith(client);
     } else {
-      // GIS 未ロード（通常は warmUp 済みなので稀）。スクリプトを注入してから
-      // 待つ。await を挟むためジェスチャーは失われうる（初回同意時のみ影響）。
-      injectGisScript();
+      // GIS 未ロード（通常は warmUp 済みなので稀）。ジェスチャーは失われうる。
       waitForGis()
         .then(() => {
           const c = initClientSync();
