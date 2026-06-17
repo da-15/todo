@@ -26,7 +26,8 @@ npm run dev                  # http://localhost:5173/todo/
 ## ビルド / デプロイ
 
 ```bash
-npm run build                # アイコン生成 → 型チェック → docs/ へ出力
+npm run gen:icons            # アイコン PNG を再生成（必要なときだけ）
+npm run build                # 型チェック（tsc -b）→ docs/ へ出力
 git add docs && git commit && git push
 ```
 
@@ -47,13 +48,26 @@ GitHub Pages の設定で「Branch: main / Folder: /docs」を選択する。
 
 ## 同期の仕様
 
-- トリガー: 一覧画面の**プルダウン**、または「今すぐ同期」ボタンのときのみ。
+- トリガー: 一覧画面の「**同期**」ボタンを押したときのみ（自動同期はしない）。
 - 流れ: ローカル変更を push（insert / patch / delete）→ `updatedMin` で差分 pull → 突き合わせ。
 - 同一判定: `googleTaskId` / `googleTaskListId`。
 - 競合: last-write-wins（`updatedAt` ↔ Google `updated`）。
 - 削除: ローカル削除は tombstone として保持し、次回同期で Google を delete。
   Google 側削除はローカルからも除去。失敗した push は tombstone を残し次回リトライ。
 - 未ログイン時はローカルのみで動作。同期操作時にログインを促す。
+
+## 設計方針
+
+- 同期先は **Google Tasks に一本化**し、Google Calendar API は直接連携しない。
+  予定日型は `due` 付きで同期すれば Google カレンダーにも自動表示されるため、
+  連携先を1つに保ち競合・二重管理を避ける。
+- データ本体は端末の localStorage に保持し、独自サーバー/クラウド DB は持たない
+  （Google Tasks が実質的なバックアップ兼同期先になる）。
+
+### スコープ外
+
+複数ユーザー/共有、プッシュ通知サーバー、予定日の事前リマインダー通知、
+Google Calendar への予定枠イベント登録、App Store 配布。
 
 ## iOS での利用
 
