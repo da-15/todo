@@ -35,16 +35,40 @@ export function TaskEditor({ initial, onSave, onCancel }: Props) {
     });
   };
 
+  // タイトル入力中の Enter で保存。IME 変換確定の Enter は isComposing で無視する。
+  const onNameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Enter") return;
+    if (e.nativeEvent.isComposing) return;
+    e.preventDefault();
+    submit();
+  };
+
   return (
     <div className="modal-backdrop" onClick={onCancel}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-actions">
+          <button className="btn-ghost" onClick={onCancel} type="button">
+            キャンセル
+          </button>
+          <button
+            className="btn-primary"
+            onClick={submit}
+            disabled={!canSave}
+            type="button"
+          >
+            保存
+          </button>
+        </div>
+
         <label className="field">
           <input
             type="text"
             value={name}
             autoFocus
+            enterKeyHint="done"
             placeholder="タスク名（例: 牛乳を買う）"
             onChange={(e) => setName(e.target.value)}
+            onKeyDown={onNameKeyDown}
           />
         </label>
 
@@ -74,20 +98,6 @@ export function TaskEditor({ initial, onSave, onCancel }: Props) {
               onChange={(e) => setDueDate(e.target.value)}
             />
           )}
-        </div>
-
-        <div className="modal-actions">
-          <button className="btn-ghost" onClick={onCancel} type="button">
-            キャンセル
-          </button>
-          <button
-            className="btn-primary"
-            onClick={submit}
-            disabled={!canSave}
-            type="button"
-          >
-            保存
-          </button>
         </div>
       </div>
     </div>
