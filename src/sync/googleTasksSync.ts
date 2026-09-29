@@ -15,6 +15,7 @@ import {
   TasksApiError,
   type GoogleTask,
 } from "../google/tasksApi";
+import { isLoggedIn } from "../google/auth";
 import type { TodoTask } from "../types";
 
 export interface SyncResult {
@@ -135,6 +136,23 @@ export function syncWithGoogle(): Promise<SyncResult> {
   return inFlight;
 }
 
+/** 同期が実行中か。 */
+export function isSyncing(): boolean {
+  return inFlight !== null;
+}
+
+/**
+ * 実行中の同期があれば終わるまで待つ（成否は問わない）。
+ * ローカル初期化・同期状態リセットの前に呼ぶ。同期中に消去すると、同期の最後の
+ * 合流処理が「ユーザーが削除した」と判断して tombstone を作り、次回の同期で
+ * Google 側のタスクまで削除してしまうため。
+ */
+export async function waitForSyncIdle(): Promise<void> {
+  while (inFlight) {
+    await inFlight.catch(() => {});
+  }
+}
+
 async function runSync(): Promise<SyncResult> {
   const result: SyncResult = {
     pushedNew: 0,
@@ -162,11 +180,17 @@ async function runSync(): Promise<SyncResult> {
   const isGone = (e: unknown): boolean =>
     e instanceof TasksApiError && (e.status === 404 || e.status === 410);
 
-  // 真に失敗してリトライが必要なローカル ID。tombstone の保持判定に使う。
-  const failedIds = new Set<string>();
+  // Google 側の削除まで完了した tombstone のローカル ID。これだけをローカルから除去し、
+  // 失敗・未処理（途中で中断した）ものは残して次回リトライする。
+  const deletedIds = new Set<string>();
+
+  // 認証が切れた（401・サイレント再取得の失敗）ら push を中断する。続行すると残りの
+  // タスクごとにサイレント再認証を試み、その都度待たされて同期が長時間固まるため。
+  let authLost = false;
 
   // ===== 1. PUSH: ローカル変更を Google へ =====
   for (const task of tasks) {
+    if (authLost) break;
     try {
       // 削除 tombstone → Google を delete
       if (task.isDeleted) {
@@ -185,6 +209,7 @@ async function runSync(): Promise<SyncResult> {
           }
         }
         // tombstone は後でローカルからも除去（下のフィルタで）
+        deletedIds.add(task.id);
         continue;
       }
 
@@ -231,16 +256,16 @@ async function runSync(): Promise<SyncResult> {
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      failedIds.add(task.id);
       result.errors.push(`push 失敗 (${task.name}): ${msg}`);
+      if (!isLoggedIn()) authLost = true;
     }
   }
+  if (authLost) {
+    result.errors.push("認証が切れたため同期を中断しました。もう一度同期してください");
+  }
 
-  // tombstone をローカルから除去。削除に失敗したものだけ残し次回リトライする。
-  tasks = tasks.filter((t) => {
-    if (!t.isDeleted) return true;
-    return failedIds.has(t.id); // 失敗時のみ残す
-  });
+  // tombstone をローカルから除去。削除に失敗・未処理のものは残し次回リトライする。
+  tasks = tasks.filter((t) => !t.isDeleted || !deletedIds.has(t.id));
 
   // ===== 2. PULL: Google から差分取得 =====
   // lastSync が無い場合は全件取得（completed/deleted 込み）。これを prune の根拠に使う。
@@ -249,6 +274,7 @@ async function runSync(): Promise<SyncResult> {
   let pullOk = false;
   const nextSyncFrom = new Date(Date.now() - PULL_OVERLAP_MS).toISOString();
   try {
+    if (authLost) throw new Error("認証切れのため中止");
     remoteTasks = await listTasks(listId, {
       updatedMin: lastSync ?? undefined,
     });
