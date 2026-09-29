@@ -4,7 +4,7 @@ import { isLoggedIn, login, logout, onAuthChange } from "../google/auth";
 import { requestNotificationPermission } from "../badge";
 import { setSyncMeta } from "../storage/syncMeta";
 import { clearAllTasks } from "../storage/taskStore";
-import { syncWithGoogle } from "../sync/googleTasksSync";
+import { isSyncing, syncWithGoogle, waitForSyncIdle } from "../sync/googleTasksSync";
 
 interface Props {
   onClose: () => void;
@@ -51,6 +51,8 @@ export function SettingsView({ onClose, onDataChanged }: Props) {
     setError(null);
     try {
       await ensureLogin();
+      // 実行中の同期が終わってからリセットする（終了時の保存でリセットが上書きされるため）
+      await waitForSyncIdle();
       setSyncMeta({ lastSyncedAt: null });
       const r = await syncWithGoogle();
       onDataChanged();
@@ -77,6 +79,10 @@ export function SettingsView({ onClose, onDataChanged }: Props) {
     setBusy(true);
     setError(null);
     try {
+      // 実行中の同期があれば終わるまで待つ（消去が「ユーザーの削除」と誤認され、
+      // Google 側のタスクまで削除されるのを防ぐ）。同期していないときは await を挟まず、
+      // 下の対話ログインをタップ操作の直後に呼べるようにする（iOS のポップアップ対策）。
+      if (isSyncing()) await waitForSyncIdle();
       clearAllTasks();
       setSyncMeta({ lastSyncedAt: null });
       onDataChanged();
