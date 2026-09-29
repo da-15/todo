@@ -42,24 +42,17 @@ let tokenClient: TokenClient | null = null;
 let accessToken: string | null = null;
 let tokenExpiresAt = 0; // epoch ms
 
-// 「過去に一度でも認可に成功したか」のフラグ（トークン本体ではないので永続化する）。
-// これが立っていれば 2 回目以降は対話ログインでも prompt:"none" でサイレント取得を試みる。
-const CONSENT_KEY = "todo.googleConsented";
-function hasConsented(): boolean {
-  try {
-    return localStorage.getItem(CONSENT_KEY) === "1";
-  } catch {
-    return false;
-  }
+// 旧実装が保存していた「認可済み」フラグ。現在は使わないので起動時に掃除だけする。
+try {
+  localStorage.removeItem("todo.googleConsented");
+} catch {
+  /* localStorage 不可（プライベートモード等）は無視 */
 }
-function setConsented(v: boolean): void {
-  try {
-    if (v) localStorage.setItem(CONSENT_KEY, "1");
-    else localStorage.removeItem(CONSENT_KEY);
-  } catch {
-    /* localStorage 不可（プライベートモード等）は無視 */
-  }
-}
+
+// トークン失効の何分前から「失効扱い」にするか。同期の途中で失効すると、
+// ユーザー操作外でのサイレント再取得（iOS ではポップアップがブロックされやすい）が
+// 走って失敗するため、余裕を持って同期開始前の対話ログインで取り直させる。
+const EXPIRY_MARGIN_MS = 5 * 60_000;
 
 // 進行中の login() のエラー処理。ポップアップを閉じたときに即座に解決するため、
 // クライアント生成時に登録した error_callback からここへ通知する。
@@ -151,21 +144,22 @@ export function login(interactive = true): Promise<string> {
     }, timeoutMs);
 
     const requestWith = (client: TokenClient) => {
-      // 対話ログインでも、過去に認可済みなら同意／アカウント選択画面を出さず
-      // prompt:"none" でサイレント取得を試みる（＝2回目以降はサイレント）。
-      // 初回（未認可）のときだけ prompt:"" で同意フローを表示する。
-      const silent = !interactive || hasConsented();
+      // 対話ログインは常に prompt:"" を使う。GIS の "" は「認可済みなら UI を出さずに
+      // 自動完了し、必要なとき（アカウント選択・再同意など）だけ UI を出す」挙動。
+      // 以前は認可済みなら prompt:"none" にしていたが、"none" は少しでも操作が必要な
+      // 状況（Google セッション切れ・複数アカウント等）で即エラーになり、
+      // 「数回に一回同期が失敗する」原因になっていた。
+      // "none" はユーザー操作外で呼ばれる非対話（getAccessToken 経由）のみで使う。
+      const silent = !interactive;
       client.callback = (resp: TokenResponse) => {
         finish(() => {
           if (resp.error || !resp.access_token) {
-            // サイレント取得が失敗したら認可フラグを下ろし、次回は対話フローに戻す。
-            if (silent) setConsented(false);
             reject(new Error(resp.error ?? "アクセストークンの取得に失敗しました"));
             return;
           }
           accessToken = resp.access_token;
-          tokenExpiresAt = Date.now() + (resp.expires_in ?? 3600) * 1000 - 60_000;
-          setConsented(true);
+          tokenExpiresAt =
+            Date.now() + (resp.expires_in ?? 3600) * 1000 - EXPIRY_MARGIN_MS;
           notify();
           resolve(accessToken);
         });
@@ -173,16 +167,7 @@ export function login(interactive = true): Promise<string> {
       // ポップアップを閉じた／キャンセルした場合や、サイレント取得が
       // 失敗した場合（interaction_required 等）はここで即座に終了する。
       activeErrorHandler = (err: GisError) => {
-        if (silent) setConsented(false);
-        finish(() =>
-          reject(
-            new Error(
-              err.type === "popup_closed"
-                ? "認証がキャンセルされました"
-                : "認証ウィンドウを開けませんでした",
-            ),
-          ),
-        );
+        finish(() => reject(new Error(describeGisError(err))));
       };
       client.requestAccessToken({ prompt: silent ? "none" : "" });
     };
@@ -211,6 +196,28 @@ export function login(interactive = true): Promise<string> {
   });
 }
 
+function describeGisError(err: GisError): string {
+  switch (err.type) {
+    case "popup_closed":
+      return "認証がキャンセルされました";
+    case "popup_failed_to_open":
+      return "認証ウィンドウを開けませんでした（ポップアップがブロックされた可能性があります）";
+    default:
+      return `認証に失敗しました${err.type ? `（${err.type}）` : ""}`;
+  }
+}
+
+/**
+ * API が 401 を返したとき（トークンが失効・取り消し済み）に呼ぶ。
+ * メモリ上のトークンを捨て、次回の同期操作で対話ログインからやり直させる。
+ */
+export function invalidateToken(): void {
+  if (!accessToken) return;
+  accessToken = null;
+  tokenExpiresAt = 0;
+  notify();
+}
+
 /** 有効なトークンを返す。期限切れなら静かに再取得を試みる。 */
 export async function getAccessToken(): Promise<string> {
   if (isLoggedIn()) return accessToken!;
@@ -223,6 +230,5 @@ export function logout(): void {
   }
   accessToken = null;
   tokenExpiresAt = 0;
-  setConsented(false); // 認可を取り消したので次回は対話フローに戻す
   notify();
 }

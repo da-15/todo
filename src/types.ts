@@ -19,7 +19,8 @@ export interface TodoTask {
 }
 
 export interface SyncMeta {
-  lastSyncedAt: string | null; // 前回同期時刻（updatedMin に使用）
+  lastSyncedAt: string | null; // 前回同期（pull 成功）の完了時刻。null なら次回は全件取得
+  pullCursor?: string | null; // 次回の差分取得に使う updatedMin（pull 開始時刻より少し前）
   taskListId: string | null; // 同期対象リスト
 }
 

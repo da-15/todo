@@ -60,8 +60,82 @@ function isNewerRemote(local: TodoTask, remote: GoogleTask): boolean {
   return r >= l;
 }
 
+// 次回の差分取得（updatedMin）の起点を、pull 開始時刻からこれだけ遡らせる。
+// 端末と Google の時計のずれや、pull 中に Google 側で行われた変更の取りこぼしを防ぐ。
+// 重複して取得しても、同じ内容なら下の突き合わせで何もしないので安全。
+const PULL_OVERLAP_MS = 5 * 60_000;
+
+/**
+ * 同期中（API 待ちの間）にユーザーが行ったローカル変更を、同期結果に合流させる。
+ * 同期は開始時に読んだタスク一覧を最後に丸ごと保存するため、そのままだと
+ * 同期中に追加・編集・削除したタスクが上書きされて消えてしまう。
+ */
+function mergeConcurrentEdits(
+  synced: TodoTask[],
+  snapshot: Map<string, string>, // 同期開始時の id → updatedAt
+): TodoTask[] {
+  const current = getAllTasksRaw();
+  const currentById = new Map(current.map((t) => [t.id, t]));
+  const syncedIds = new Set(synced.map((t) => t.id));
+  const now = new Date().toISOString();
+  const out: TodoTask[] = [];
+
+  for (const t of synced) {
+    // 今回 Google から取り込んだ新規タスク
+    if (!snapshot.has(t.id)) {
+      out.push(t);
+      continue;
+    }
+    const cur = currentById.get(t.id);
+    if (!cur) {
+      // 同期中にユーザーが物理削除した（未同期タスクの削除）。
+      // この同期で Google に登録済みなら tombstone にして次回 Google 側も消す。
+      if (t.googleTaskId) out.push({ ...t, isDeleted: true, updatedAt: now });
+      continue;
+    }
+    if (cur.updatedAt === snapshot.get(t.id)) {
+      out.push(t); // 同期中の変更なし
+      continue;
+    }
+    // 同期中に編集・削除された → ユーザーの変更を優先し、同期で得た紐付けだけ引き継ぐ。
+    // syncedAt を null にして未同期扱いにし、次回の同期で確実に push させる。
+    out.push({
+      ...cur,
+      googleTaskId: t.googleTaskId ?? cur.googleTaskId,
+      googleTaskListId: t.googleTaskListId ?? cur.googleTaskListId,
+      syncedAt: null,
+    });
+  }
+
+  for (const cur of current) {
+    if (syncedIds.has(cur.id)) continue;
+    if (!snapshot.has(cur.id)) {
+      out.push(cur); // 同期中に新規作成された
+    } else if (cur.updatedAt !== snapshot.get(cur.id) && !cur.isDeleted) {
+      // 同期で除去された（Google 側で削除された等）が、同期中にユーザーが編集した。
+      // 最新の編集を失わないよう、紐付けを外して新規タスクとして残す。
+      out.push({ ...cur, googleTaskId: null, googleTaskListId: null, syncedAt: null });
+    }
+  }
+  return out;
+}
+
 // ---- メイン ----
-export async function syncWithGoogle(): Promise<SyncResult> {
+// 同期の多重実行を防ぐ。実行中に再度呼ばれたら、進行中の同期の結果を返す。
+// （一覧画面と設定画面から同時に呼ばれると、互いの保存で上書きし合い、
+//   同じタスクが Google に二重登録されうるため）
+let inFlight: Promise<SyncResult> | null = null;
+
+export function syncWithGoogle(): Promise<SyncResult> {
+  if (!inFlight) {
+    inFlight = runSync().finally(() => {
+      inFlight = null;
+    });
+  }
+  return inFlight;
+}
+
+async function runSync(): Promise<SyncResult> {
   const result: SyncResult = {
     pushedNew: 0,
     pushedUpdated: 0,
@@ -76,10 +150,12 @@ export async function syncWithGoogle(): Promise<SyncResult> {
 
   const meta = getSyncMeta();
   const listId = meta.taskListId ?? (await getDefaultTaskListId());
-  const lastSync = meta.lastSyncedAt;
-  const lastSyncMs = lastSync ? Date.parse(lastSync) : 0;
+  // lastSyncedAt が null（初回・設定画面からのリセット後）なら全件取得する。
+  // pullCursor が無い旧データは lastSyncedAt をそのまま起点にする。
+  const lastSync = meta.lastSyncedAt ? (meta.pullCursor ?? meta.lastSyncedAt) : null;
 
   let tasks = getAllTasksRaw();
+  const snapshot = new Map(tasks.map((t) => [t.id, t.updatedAt]));
   const pushedGoogleIds = new Set<string>();
 
   // Google 側に既に存在しない（404/410）= 削除済みとみなして成功扱いにする。
@@ -171,6 +247,7 @@ export async function syncWithGoogle(): Promise<SyncResult> {
   const isFullPull = !lastSync;
   let remoteTasks: GoogleTask[] = [];
   let pullOk = false;
+  const nextSyncFrom = new Date(Date.now() - PULL_OVERLAP_MS).toISOString();
   try {
     remoteTasks = await listTasks(listId, {
       updatedMin: lastSync ?? undefined,
@@ -231,6 +308,16 @@ export async function syncWithGoogle(): Promise<SyncResult> {
 
     // 両方に存在 → last-write-wins
     const localChangedSinceSync = isPendingSync(local);
+
+    // 前回同期で反映済みの版と同じ（差分取得の重複分）→ 何もしない
+    if (
+      !localChangedSinceSync &&
+      remote.updated &&
+      local.syncedAt &&
+      Date.parse(remote.updated) === Date.parse(local.syncedAt)
+    ) {
+      continue;
+    }
     if (localChangedSinceSync && !isNewerRemote(local, remote)) {
       // ローカルが新しい → 既に push 済み想定だが、念のため保持してログ
       result.log.push(`conflict: ローカル優先 (${local.name})`);
@@ -272,12 +359,15 @@ export async function syncWithGoogle(): Promise<SyncResult> {
     result.pulledDeleted += before - tasks.length;
   }
 
-  // ローカル lastSyncMs 参照は将来の最適化用（現状は updatedMin に委譲）
-  void lastSyncMs;
-
-  saveAllRaw(tasks);
+  saveAllRaw(mergeConcurrentEdits(tasks, snapshot));
+  // pull に失敗したときは lastSyncedAt を進めない。進めてしまうと、その間に
+  // Google 側で行われた変更が次回以降の差分取得から永久に漏れる。
   const finishedAt = new Date().toISOString();
-  setSyncMeta({ lastSyncedAt: finishedAt, taskListId: listId });
+  setSyncMeta(
+    pullOk
+      ? { lastSyncedAt: finishedAt, pullCursor: nextSyncFrom, taskListId: listId }
+      : { taskListId: listId },
+  );
   result.finishedAt = finishedAt;
 
   if (result.log.length) console.info("[sync]", result.log);
