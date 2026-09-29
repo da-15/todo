@@ -1,7 +1,7 @@
 import { STORAGE_KEYS } from "../config";
 import type { SyncMeta } from "../types";
 
-const DEFAULT: SyncMeta = { lastSyncedAt: null, taskListId: null };
+const DEFAULT: SyncMeta = { lastSyncedAt: null, pullCursor: null, taskListId: null };
 
 export function getSyncMeta(): SyncMeta {
   try {

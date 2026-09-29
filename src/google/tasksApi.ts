@@ -1,5 +1,5 @@
 // Google Tasks REST API (tasks/v1) の薄いラッパー。
-import { getAccessToken } from "./auth";
+import { getAccessToken, invalidateToken } from "./auth";
 
 const BASE = "https://tasks.googleapis.com/tasks/v1";
 
@@ -28,31 +28,76 @@ export interface GoogleTaskList {
   title: string;
 }
 
+// 一時的なエラー（レート制限・サーバー側の一時障害）は指数バックオフで再試行する。
+// Google Tasks API はタスク件数ぶん連続でリクエストすると 429 / 403(rateLimitExceeded)
+// や 5xx をときどき返すため、再試行しないと「数回に一回失敗」になる。
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 500;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function isRateLimited(status: number, body: string): boolean {
+  return status === 429 || (status === 403 && /rateLimitExceeded/i.test(body));
+}
+
 async function api<T>(
   path: string,
   init: RequestInit & { query?: Record<string, string | undefined> } = {},
 ): Promise<T> {
-  const token = await getAccessToken();
   const url = new URL(BASE + path);
   if (init.query) {
     for (const [k, v] of Object.entries(init.query)) {
       if (v !== undefined) url.searchParams.set(k, v);
     }
   }
-  const res = await fetch(url.toString(), {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      ...(init.headers ?? {}),
-    },
-  });
-  if (!res.ok) {
+  // POST(insert) はサーバー側で処理済みの可能性がある失敗（5xx・通信断）を再試行すると
+  // タスクが重複するため、確実に未処理なレート制限のときだけ再試行する。
+  const idempotent = (init.method ?? "GET").toUpperCase() !== "POST";
+
+  for (let attempt = 0; ; attempt++) {
+    const canRetry = attempt < MAX_RETRIES;
+    const backoff = () => sleep(BASE_DELAY_MS * 2 ** attempt + Math.random() * 250);
+
+    const token = await getAccessToken();
+    let res: Response;
+    try {
+      res = await fetch(url.toString(), {
+        ...init,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          ...(init.headers ?? {}),
+        },
+      });
+    } catch (e) {
+      // 通信エラー（圏外・復帰直後など）
+      if (idempotent && canRetry) {
+        await backoff();
+        continue;
+      }
+      throw e;
+    }
+
+    if (res.ok) {
+      if (res.status === 204) return undefined as T;
+      return (await res.json()) as T;
+    }
+
     const text = await res.text();
+    if (res.status === 401) {
+      // トークンが無効（失効・取り消し）。次回の同期で対話ログインし直させる。
+      invalidateToken();
+    } else if (
+      canRetry &&
+      (isRateLimited(res.status, text) || (idempotent && res.status >= 500))
+    ) {
+      await backoff();
+      continue;
+    }
     throw new TasksApiError(res.status, `Google Tasks API ${res.status}: ${text}`);
   }
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
 }
 
 export async function listTaskLists(): Promise<GoogleTaskList[]> {

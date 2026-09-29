@@ -101,7 +101,7 @@ export function App() {
       }
       const result = await syncWithGoogle();
       refresh();
-      setLastSync(result.finishedAt);
+      setLastSync(getSyncMeta().lastSyncedAt);
       const pushed = result.pushedNew + result.pushedUpdated + result.pushedDeleted;
       const pulled = result.pulledNew + result.pulledUpdated + result.pulledDeleted;
       setSyncMsg(
