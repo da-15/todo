@@ -6,6 +6,7 @@ import { isGoogleConfigured } from "../config";
 
 interface Props {
   task: TodoTask;
+  flash?: boolean; // 並び替えで移動した直後に一瞬ハイライトする
   onToggle: (id: string) => void;
   onEdit: (task: TodoTask) => void;
   onDelete: (id: string) => void;
@@ -24,7 +25,7 @@ function formatDue(due: string | null): string {
   });
 }
 
-export function TaskListItem({ task, onToggle, onEdit, onDelete }: Props) {
+export function TaskListItem({ task, flash, onToggle, onEdit, onDelete }: Props) {
   // 予定日の色分け: 昨日以前→赤(overdue) / 当日→青(today) / 未来→黒(future)。
   // 完了済みは色分けしない（既定の青のまま）。
   const today = todayLocal();
@@ -123,7 +124,9 @@ export function TaskListItem({ task, onToggle, onEdit, onDelete }: Props) {
   };
 
   return (
-    <li className={`task-item ${task.isCompleted ? "done" : ""}`}>
+    <li
+      className={`task-item ${task.isCompleted ? "done" : ""} ${flash ? "flash" : ""}`}
+    >
       <button
         className="swipe-delete"
         style={{ width: DELETE_WIDTH }}

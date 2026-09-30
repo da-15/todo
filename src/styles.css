@@ -244,6 +244,16 @@ body {
 .task-item.done .task-row {
   background: #f1f3f5;
 }
+/* 並び替えで移動した直後、移動先がわかるよう背景を一瞬光らせる */
+.task-item.flash .task-row {
+  animation: task-flash 1.2s ease-out;
+}
+@keyframes task-flash {
+  0%,
+  25% {
+    background: #dbeafe;
+  }
+}
 .task-item.done .task-name {
   text-decoration: line-through;
   color: var(--muted);
