@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTasks } from "./hooks/useTasks";
 import { TaskListItem } from "./components/TaskListItem";
 import { TaskEditor } from "./components/TaskEditor";
@@ -21,6 +21,11 @@ function isStandalone(): boolean {
   );
 }
 
+// 完了/未完了を切り替えた直後は並び替えを少し待ち、その場でグレーになるのを
+// 見せてから移動させる。移動後は移動先の行を一瞬ハイライトする。
+const SETTLE_DELAY_MS = 800;
+const FLASH_MS = 1200;
+
 function formatSyncTime(iso: string | null): string {
   if (!iso) return "未同期";
   const d = new Date(iso);
@@ -34,6 +39,13 @@ function formatSyncTime(iso: string | null): string {
 
 export function App() {
   const { tasks, refresh, add, edit, remove, toggle } = useTasks();
+  // frozenOrder: 切り替え直後に固定しておく表示順（null なら通常のソート順）。
+  // flashIds: 移動直後にハイライトするタスク。
+  const [frozenOrder, setFrozenOrder] = useState<string[] | null>(null);
+  const [flashIds, setFlashIds] = useState<Set<string>>(() => new Set());
+  const toggledIds = useRef<Set<string>>(new Set());
+  const settleTimer = useRef<number>();
+  const flashTimer = useRef<number>();
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<TodoTask | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -82,6 +94,41 @@ export function App() {
       }),
     [tasks],
   );
+
+  // 固定中は切り替え前の順番で表示する。固定後に追加されたタスクなど、
+  // 固定順に含まれないものがあれば固定を諦めて通常のソート順にする。
+  const displayed = useMemo(() => {
+    if (!frozenOrder) return sorted;
+    const byId = new Map(sorted.map((t) => [t.id, t]));
+    const kept = frozenOrder.flatMap((id) => byId.get(id) ?? []);
+    return kept.length === sorted.length ? kept : sorted;
+  }, [sorted, frozenOrder]);
+
+  useEffect(
+    () => () => {
+      window.clearTimeout(settleTimer.current);
+      window.clearTimeout(flashTimer.current);
+    },
+    [],
+  );
+
+  const handleToggle = (id: string) => {
+    // 連続タップ時は最初の順番を保ったまま、待ち時間だけ延長する。
+    if (!frozenOrder) setFrozenOrder(displayed.map((t) => t.id));
+    toggledIds.current.add(id);
+    toggle(id);
+    window.clearTimeout(settleTimer.current);
+    settleTimer.current = window.setTimeout(() => {
+      setFrozenOrder(null);
+      setFlashIds(new Set(toggledIds.current));
+      toggledIds.current = new Set();
+      window.clearTimeout(flashTimer.current);
+      flashTimer.current = window.setTimeout(
+        () => setFlashIds(new Set()),
+        FLASH_MS,
+      );
+    }, SETTLE_DELAY_MS);
+  };
 
   const handleSync = async () => {
     if (syncing) return; // 多重起動を防ぐ
@@ -173,15 +220,16 @@ export function App() {
 
       <div className="list-scroll">
         {showInstall && <InstallGuide onDismiss={dismissInstall} />}
-        {sorted.length === 0 ? (
+        {displayed.length === 0 ? (
           <p className="empty">タスクはありません。</p>
         ) : (
           <ul className="task-list">
-            {sorted.map((task) => (
+            {displayed.map((task) => (
               <TaskListItem
                 key={task.id}
                 task={task}
-                onToggle={toggle}
+                flash={flashIds.has(task.id)}
+                onToggle={handleToggle}
                 onEdit={openEdit}
                 onDelete={remove}
               />
