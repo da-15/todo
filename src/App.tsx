@@ -38,12 +38,19 @@ function formatSyncTime(iso: string | null): string {
 }
 
 export function App() {
-  const { tasks, refresh, add, edit, remove, toggle } = useTasks();
-  // frozenOrder: 切り替え直後に固定しておく表示順（null なら通常のソート順）。
+  const { tasks, refresh, add, edit, remove } = useTasks();
+  // pending: 切り替えたがまだ保存していない完了状態（id → 切り替え後の isCompleted）。
+  //   タップ直後は見た目だけ切り替え、少し待ってから実際に変わったものだけ保存する。
+  //   待っている間に元へ戻せば何も保存されず、更新日時も並び順も変わらない。
+  // frozenOrder: 保存待ちの間、固定しておく表示順（null なら通常のソート順）。
   // flashIds: 移動直後にハイライトするタスク。
+  const [pending, setPending] = useState<Map<string, boolean>>(() => new Map());
   const [frozenOrder, setFrozenOrder] = useState<string[] | null>(null);
   const [flashIds, setFlashIds] = useState<Set<string>>(() => new Set());
-  const toggledIds = useRef<Set<string>>(new Set());
+  // タイマーやイベントリスナーから最新の値を読むための参照。
+  const pendingRef = useRef(pending);
+  const tasksRef = useRef(tasks);
+  tasksRef.current = tasks;
   const settleTimer = useRef<number>();
   const flashTimer = useRef<number>();
   const [editorOpen, setEditorOpen] = useState(false);
@@ -82,17 +89,21 @@ export function App() {
   //  3. 未完了どうしは 予定日ありを日付昇順 → 予定日なしを更新日の古い順
   const sorted = useMemo(
     () =>
-      [...tasks].sort((a, b) => {
-        if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1;
-        if (a.isCompleted && b.isCompleted)
+      tasks
+        .map((t) =>
+          pending.has(t.id) ? { ...t, isCompleted: pending.get(t.id)! } : t,
+        )
+        .sort((a, b) => {
+          if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1;
+          if (a.isCompleted && b.isCompleted)
+            return a.updatedAt.localeCompare(b.updatedAt);
+          const aHas = a.dueDate !== null;
+          const bHas = b.dueDate !== null;
+          if (aHas !== bHas) return aHas ? -1 : 1;
+          if (aHas && bHas) return a.dueDate!.localeCompare(b.dueDate!);
           return a.updatedAt.localeCompare(b.updatedAt);
-        const aHas = a.dueDate !== null;
-        const bHas = b.dueDate !== null;
-        if (aHas !== bHas) return aHas ? -1 : 1;
-        if (aHas && bHas) return a.dueDate!.localeCompare(b.dueDate!);
-        return a.updatedAt.localeCompare(b.updatedAt);
-      }),
-    [tasks],
+        }),
+    [tasks, pending],
   );
 
   // 固定中は切り替え前の順番で表示する。固定後に追加されたタスクなど、
@@ -104,34 +115,95 @@ export function App() {
     return kept.length === sorted.length ? kept : sorted;
   }, [sorted, frozenOrder]);
 
-  useEffect(
-    () => () => {
+  const updatePending = (next: Map<string, boolean>) => {
+    pendingRef.current = next;
+    setPending(next);
+  };
+
+  // 保存待ちの切り替えを保存し、固定していた並び順を解除する。
+  // 保存したタスクの id を返す。
+  const commitPending = (): string[] => {
+    window.clearTimeout(settleTimer.current);
+    const changes = pendingRef.current;
+    updatePending(new Map());
+    setFrozenOrder(null);
+    const committed: string[] = [];
+    for (const [id, isCompleted] of changes) {
+      const stored = tasksRef.current.find((t) => t.id === id);
+      // 同期などで保存済みの状態が既に同じになっていれば書き込まない
+      if (!stored || stored.isCompleted === isCompleted) continue;
+      edit(id, { isCompleted });
+      committed.push(id);
+    }
+    return committed;
+  };
+
+  const settle = () => {
+    const moved = commitPending();
+    if (moved.length === 0) return;
+    setFlashIds(new Set(moved));
+    window.clearTimeout(flashTimer.current);
+    flashTimer.current = window.setTimeout(
+      () => setFlashIds(new Set()),
+      FLASH_MS,
+    );
+  };
+
+  // 保存待ちのままアプリを閉じても切り替えが失われないよう、
+  // バックグラウンドに回った時点ですぐ保存する。
+  useEffect(() => {
+    const flush = () => {
+      if (pendingRef.current.size > 0) commitPending();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", flush);
       window.clearTimeout(settleTimer.current);
       window.clearTimeout(flashTimer.current);
-    },
-    [],
-  );
+    };
+    // commitPending は ref と安定した関数だけを使うので、初回の登録のままでよい
+  }, []);
 
   const handleToggle = (id: string) => {
+    const task = tasks.find((t) => t.id === id);
+    if (!task) return;
+    const next = new Map(pendingRef.current);
+    const shown = next.get(id) ?? task.isCompleted;
+    // 保存済みの状態に戻ったら保存待ちから外す（＝何も保存しない）
+    if (!shown === task.isCompleted) next.delete(id);
+    else next.set(id, !shown);
+    updatePending(next);
+    window.clearTimeout(settleTimer.current);
+    if (next.size === 0) {
+      setFrozenOrder(null);
+      return;
+    }
     // 連続タップ時は最初の順番を保ったまま、待ち時間だけ延長する。
     if (!frozenOrder) setFrozenOrder(displayed.map((t) => t.id));
-    toggledIds.current.add(id);
-    toggle(id);
-    window.clearTimeout(settleTimer.current);
-    settleTimer.current = window.setTimeout(() => {
-      setFrozenOrder(null);
-      setFlashIds(new Set(toggledIds.current));
-      toggledIds.current = new Set();
-      window.clearTimeout(flashTimer.current);
-      flashTimer.current = window.setTimeout(
-        () => setFlashIds(new Set()),
-        FLASH_MS,
-      );
-    }, SETTLE_DELAY_MS);
+    settleTimer.current = window.setTimeout(settle, SETTLE_DELAY_MS);
+  };
+
+  const handleDelete = (id: string) => {
+    if (pendingRef.current.has(id)) {
+      const next = new Map(pendingRef.current);
+      next.delete(id);
+      updatePending(next);
+      if (next.size === 0) {
+        window.clearTimeout(settleTimer.current);
+        setFrozenOrder(null);
+      }
+    }
+    remove(id);
   };
 
   const handleSync = async () => {
     if (syncing) return; // 多重起動を防ぐ
+    commitPending(); // 保存待ちの切り替えも今回の同期に含める
     if (!isGoogleConfigured()) {
       setSyncMsg("Google 未設定のため同期できません");
       setTimeout(() => setSyncMsg(null), 3000);
@@ -231,7 +303,7 @@ export function App() {
                 flash={flashIds.has(task.id)}
                 onToggle={handleToggle}
                 onEdit={openEdit}
-                onDelete={remove}
+                onDelete={handleDelete}
               />
             ))}
           </ul>
