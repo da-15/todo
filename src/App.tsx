@@ -25,6 +25,8 @@ function isStandalone(): boolean {
 // 見せてから移動させる。移動後は移動先の行を一瞬ハイライトする。
 const SETTLE_DELAY_MS = 800;
 const FLASH_MS = 1200;
+// 削除は「元に戻す」トーストを出している間は保存せず、消えた時点で確定する。
+const UNDO_DELETE_MS = 5000;
 
 function formatSyncTime(iso: string | null): string {
   if (!iso) return "未同期";
@@ -53,6 +55,10 @@ export function App() {
   tasksRef.current = tasks;
   const settleTimer = useRef<number>();
   const flashTimer = useRef<number>();
+  // pendingDeleteId: 削除したがまだ保存していないタスク（一覧からは隠す）。
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const pendingDeleteRef = useRef(pendingDeleteId);
+  const deleteTimer = useRef<number>();
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<TodoTask | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -90,6 +96,7 @@ export function App() {
   const sorted = useMemo(
     () =>
       tasks
+        .filter((t) => t.id !== pendingDeleteId)
         .map((t) =>
           pending.has(t.id) ? { ...t, isCompleted: pending.get(t.id)! } : t,
         )
@@ -103,7 +110,7 @@ export function App() {
           if (aHas && bHas) return a.dueDate!.localeCompare(b.dueDate!);
           return a.updatedAt.localeCompare(b.updatedAt);
         }),
-    [tasks, pending],
+    [tasks, pending, pendingDeleteId],
   );
 
   // 固定中は切り替え前の順番で表示する。固定後に追加されたタスクなど、
@@ -149,11 +156,32 @@ export function App() {
     );
   };
 
-  // 保存待ちのままアプリを閉じても切り替えが失われないよう、
+  const updatePendingDelete = (id: string | null) => {
+    pendingDeleteRef.current = id;
+    setPendingDeleteId(id);
+  };
+
+  // 保存待ちの削除を確定する。
+  const commitDelete = () => {
+    window.clearTimeout(deleteTimer.current);
+    const id = pendingDeleteRef.current;
+    if (id === null) return;
+    updatePendingDelete(null);
+    remove(id);
+  };
+
+  // 削除を取り消す。まだ保存していないので、隠していたのを戻すだけでよい。
+  const undoDelete = () => {
+    window.clearTimeout(deleteTimer.current);
+    updatePendingDelete(null);
+  };
+
+  // 保存待ちのままアプリを閉じても切り替えや削除が失われないよう、
   // バックグラウンドに回った時点ですぐ保存する。
   useEffect(() => {
     const flush = () => {
       if (pendingRef.current.size > 0) commitPending();
+      commitDelete();
     };
     const onVisibility = () => {
       if (document.visibilityState === "hidden") flush();
@@ -165,8 +193,10 @@ export function App() {
       window.removeEventListener("pagehide", flush);
       window.clearTimeout(settleTimer.current);
       window.clearTimeout(flashTimer.current);
+      window.clearTimeout(deleteTimer.current);
     };
-    // commitPending は ref と安定した関数だけを使うので、初回の登録のままでよい
+    // commitPending / commitDelete は ref と安定した関数だけを使うので、
+    // 初回の登録のままでよい
   }, []);
 
   const handleToggle = (id: string) => {
@@ -189,21 +219,19 @@ export function App() {
   };
 
   const handleDelete = (id: string) => {
-    if (pendingRef.current.has(id)) {
-      const next = new Map(pendingRef.current);
-      next.delete(id);
-      updatePending(next);
-      if (next.size === 0) {
-        window.clearTimeout(settleTimer.current);
-        setFrozenOrder(null);
-      }
-    }
-    remove(id);
+    // 続けて削除したときは前の削除を確定し、取り消せるのは直前の1件だけにする。
+    // 完了の保存待ちはそのまま残す（取り消したときに切り替えた状態で戻すため。
+    // 削除が先に確定した場合は、保存時にタスクが見つからず何もしない）。
+    commitDelete();
+    updatePendingDelete(id);
+    deleteTimer.current = window.setTimeout(commitDelete, UNDO_DELETE_MS);
   };
 
   const handleSync = async () => {
     if (syncing) return; // 多重起動を防ぐ
-    commitPending(); // 保存待ちの切り替えも今回の同期に含める
+    // 保存待ちの切り替えと削除も今回の同期に含める
+    commitPending();
+    commitDelete();
     if (!isGoogleConfigured()) {
       setSyncMsg("Google 未設定のため同期できません");
       setTimeout(() => setSyncMsg(null), 3000);
@@ -309,6 +337,16 @@ export function App() {
           </ul>
         )}
       </div>
+
+      {pendingDeleteId && (
+        // key でトーストを差し替え、続けて削除したときも表示アニメーションをやり直す
+        <div className="undo-toast" key={pendingDeleteId} role="status">
+          <span>タスクを削除しました</span>
+          <button className="undo-btn" type="button" onClick={undoDelete}>
+            元に戻す
+          </button>
+        </div>
+      )}
 
       <button className="fab" onClick={openNew} aria-label="新規タスク">
         ＋
