@@ -379,6 +379,48 @@ body {
   cursor: pointer;
 }
 
+/* 削除の取り消しトースト。＋ボタンの左に、高さをそろえて表示する */
+.undo-toast {
+  position: fixed;
+  left: max(16px, env(safe-area-inset-left));
+  right: calc(max(20px, env(safe-area-inset-right)) + 56px + 12px);
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 56px;
+  box-sizing: border-box;
+  padding: 0 8px 0 16px;
+  background: #323a45;
+  color: #fff;
+  border-radius: 10px;
+  font-size: 14px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  animation: undo-toast-in 0.15s ease-out;
+}
+.undo-btn {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: #93c5fd;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 8px;
+  cursor: pointer;
+}
+@keyframes undo-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* モーダル */
 .modal-backdrop {
   position: fixed;
