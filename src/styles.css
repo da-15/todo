@@ -113,6 +113,12 @@ body {
   justify-content: space-between;
   padding: 8px 16px 0;
 }
+/* 未同期ドットと同期ボタン。ドットはボタンの左に置く */
+.sync-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .link-btn {
   display: inline-flex;
   align-items: center;
@@ -286,13 +292,10 @@ body {
   word-break: break-word;
 }
 .sync-dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-left: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--blue);
-  vertical-align: middle;
 }
 .task-detail {
   display: flex;
