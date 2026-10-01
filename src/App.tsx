@@ -11,6 +11,7 @@ import { updateBadge, maybeRequestNotificationPermissionOnce } from "./badge";
 import { getSyncMeta } from "./storage/syncMeta";
 import { getSettings, setSettings } from "./storage/settings";
 import type { TodoTask } from "./types";
+import { getAllTasksRaw, isPendingSync } from "./storage/taskStore";
 import type { NewTaskInput } from "./storage/taskStore";
 
 function isStandalone(): boolean {
@@ -74,9 +75,21 @@ export function App() {
   // 起動時に GIS クライアントを事前初期化しておく。
   // これで同期時に login() が requestAccessToken を同期的に呼べ、
   // タップ操作内でポップアップを開ける（iOS のポップアップブロック対策）。
+  // syncReady: 事前初期化が終わったか。終わる前に同期するとポップアップが
+  // ブロックされやすいので、未同期ドットはこれが true になるまで出さない。
+  // 読み込みに失敗した場合も true にする（ドットが出ないままになるのを防ぐ。
+  // 同期を押せば login 時に読み込みを再試行する）。
+  const [syncReady, setSyncReady] = useState(false);
   useEffect(() => {
-    void warmUp();
+    void warmUp().finally(() => setSyncReady(true));
   }, []);
+
+  // Google にまだ反映していない変更（削除を含む）が1件でもあるか。
+  // 削除済みのタスクは一覧に出ないので、tombstone を含む全件から判定する。
+  const hasUnsynced = useMemo(
+    () => isGoogleConfigured() && getAllTasksRaw().some(isPendingSync),
+    [tasks],
+  );
 
   // 起動時・フォアグラウンド復帰時にバッジ更新。初回に通知許可をリクエスト。
   useEffect(() => {
@@ -306,15 +319,24 @@ export function App() {
 
       <div className="sync-bar">
         <span className="muted small">{formatSyncTime(lastSync)}</span>
-        <button
-          className="link-btn"
-          onClick={handleSync}
-          disabled={syncing}
-          type="button"
-        >
-          {syncing && <span className="spinner" aria-hidden="true" />}
-          同期
-        </button>
+        <div className="sync-actions">
+          {hasUnsynced && syncReady && (
+            <span
+              className="sync-dot"
+              aria-label="未同期の変更あり"
+              title="未同期の変更あり"
+            />
+          )}
+          <button
+            className="link-btn"
+            onClick={handleSync}
+            disabled={syncing}
+            type="button"
+          >
+            {syncing && <span className="spinner" aria-hidden="true" />}
+            同期
+          </button>
+        </div>
         {syncMsg && <div className="sync-toast">{syncMsg}</div>}
       </div>
 

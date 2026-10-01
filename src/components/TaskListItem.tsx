@@ -1,8 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { TodoTask } from "../types";
 import { todayLocal } from "../dateUtils";
-import { isPendingSync } from "../storage/taskStore";
-import { isGoogleConfigured } from "../config";
 
 interface Props {
   task: TodoTask;
@@ -37,9 +35,6 @@ export function TaskListItem({ task, flash, onToggle, onEdit, onDelete }: Props)
         : task.dueDate === today
           ? "today"
           : "future";
-
-  // Google 連携時のみ、未同期（未プッシュ）のタスクに青ドットを出す。
-  const pendingSync = isGoogleConfigured() && isPendingSync(task);
 
   // open: 削除ボタンを露出した状態か。dragX: ドラッグ中の一時的な移動量。
   const [open, setOpen] = useState(false);
@@ -172,9 +167,6 @@ export function TaskListItem({ task, flash, onToggle, onEdit, onDelete }: Props)
         <div className="task-body" onClick={handleBodyClick}>
           <div className="task-name">
             {task.name}
-            {pendingSync && (
-              <span className="sync-dot" aria-label="未同期" title="未同期" />
-            )}
           </div>
           {task.detail && (
             <div
